@@ -1,0 +1,21 @@
+{
+  "name": "poet",
+  "version": "0.0.1",
+  "description": "what does a New Jersey lisp sound like in Vegas?",
+  "main": "poet.js",
+  "bin": { "poetc" : "poet.js" },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/aboekhoff/poet.git"
+  },
+  "keywords": [
+    "lisp",
+    "macros"
+  ],
+  "author": "Andrew Boekhoff",
+  "license": "BSD",
+  "gitHead": "b07603f45e936b87905b3c40dbe3e5aba16c6674"
+}

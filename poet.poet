@@ -1,0 +1,76 @@
+;; this initial define-macro wrapper of ##poet#define-macro*
+;; 
+
+(define-macro* define-macro 
+  (fn* (sexp _ _)
+       (let* ((tail (.rest sexp))
+	      (head (.first tail))
+	      (name (.first head))
+	      (args (.rest head))
+	      (body (.rest tail)))	
+
+	`(##poet#define-macro* ,name 
+	   (##poet#fn* (?sexp ?calling-env ?defining-env)
+	     (##poet#let* 
+	      ((?sanitizers  (.createSanitizers ?defining-env))	       
+	       (?transformer (##poet#fn* ,args ,@body))
+	       (?input       (.sanitize ?sanitizers (.rest ?sexp)))
+	       (?output      (##poet#apply ?transformer ?input))
+	       (?output*     (.sanitize ?sanitizers ?output)))
+	      ?output*))))))
+
+(define-macro (fn args :& body)
+  `(fn* ,args ,@body))
+
+(define-macro (let bindings :& body)
+  `(let* ,bindings ,@body))
+
+(define-macro (letrec bindings :& body)
+  `(letrec* ,bindings ,@body))
+
+(define-macro (cond :& clauses)
+  (if (empty? clauses)
+      #nil
+      (let ((test (first (first clauses)))
+	    (then `(##poet#do ,@(rest (first clauses))))
+	    (more (rest clauses)))
+	`(##poet#if ,test ,then (##poet#cond ,@more)))))
+
+(define-macro (or :& args)
+  (cond 
+   ((empty? args) 
+    #f)
+
+   ((empty? (rest args)) 
+    (first args))
+
+   (#t
+    `(##poet#let ((tmp ,(first args)))
+		 (##poet#if tmp tmp (##poet#or ,@(rest args)))))))
+
+(define-macro (and :& args)
+  (cond 
+   ((empty? args) 
+    #t)
+
+   ((empty? (rest args)) 
+    (first args))
+
+   (#t  
+    `(##poet#let ((tmp ,(first args)))
+		 (##poet#if tmp (##poet#and ,@(rest args)) #f)))))
+
+(define-macro (if-not test then else)
+  `(if ,test ,else ,then))
+
+(define-macro (when test :& body)
+  `(if ,test (do ,@body) #nil))
+
+(define-macro (when-not test :& body)
+  `(if ,test #nil (do ,@body)))
+
+(define-macro (define head :& tail)
+  (if (list? head)
+      `(define* ,(first head) (fn ,(rest head) (block ,name ,@tail)))     
+      `(define* ,head ,(first tail))))
+
