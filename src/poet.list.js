@@ -73,4 +73,3 @@ List.Nil.prototype.concat = function(ls) {
 List.Cons.prototype.concat = function(ls) {
     return this.tail.concat(ls).cons(this.head)
 }
-

@@ -126,3 +126,11 @@ Symbol.Tagged.prototype.ensureTag = function(tag) {
 Symbol.Qualified.prototype.ensureTag = function(tag) {
     return this
 }
+
+function gensym(suffix) {
+    suffix = suffix ? suffix : "G"
+    var id = gensym.nextId++    
+    return new Symbol.Simple("#:" + id + "-" + suffix)
+}
+
+gensym.nextId = 0

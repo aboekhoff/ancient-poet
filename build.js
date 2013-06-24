@@ -15,6 +15,7 @@ COMPILER_TARGETS = [
     'poet.compiler.js',
     'poet.emitter.js',
     'poet.generic.js',
+    'poet.iterable.js',
     'poet.pubsub.js',
     'poet.runtime.js',
     'poet.main.js'
@@ -25,6 +26,8 @@ BROWSER_RUNTIME_TARGETS = [
     'poet.symbol.js',
     'poet.keyword.js',
     'poet.generic.js',
+    'poet.iterable.js',
+    'poet.pubsub.js',
     'poet.runtime.js'
 ]
 

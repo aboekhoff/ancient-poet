@@ -213,7 +213,7 @@ Context.prototype = {
 	    this.compile(node, null)
 	    return ['CONST', null]
 
-	case 'DO':
+	case 'BEGIN':
 	    var body = node[1]
 	    var len  = body.length
 	    for (var i=0; i<len; i++) {
@@ -268,7 +268,7 @@ Context.prototype = {
 	    this.pushPure(this.getLocal(node), tracer)
 	    break
 
-	case 'DO':
+	case 'BEGIN':
 	    this.compileBody(node[1], tracer)
 	    break
 

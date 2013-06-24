@@ -274,6 +274,12 @@ Emitter.prototype = {
 	    this.emitList(b)
 	    break
 
+	case 'NEW':
+      this.write('new ')
+	    this.emit(a)
+	    this.emitList(b)
+	    break
+
 	case 'THROW':
 	    this.write('throw ')
 	    this.emit(a)

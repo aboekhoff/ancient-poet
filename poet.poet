@@ -32,7 +32,7 @@
   (if (empty? clauses)
       #nil
       (let ((test (first (first clauses)))
-	    (then `(##poet#do ,@(rest (first clauses))))
+	    (then `(##poet#begin ,@(rest (first clauses))))
 	    (more (rest clauses)))
 	`(##poet#if ,test ,then (##poet#cond ,@more)))))
 
@@ -64,13 +64,73 @@
   `(if ,test ,else ,then))
 
 (define-macro (when test :& body)
-  `(if ,test (do ,@body) #nil))
+  `(if ,test (begin ,@body) #nil))
 
 (define-macro (when-not test :& body)
-  `(if ,test #nil (do ,@body)))
+  `(if ,test #nil (begin ,@body)))
 
 (define-macro (define head :& tail)
   (if (list? head)
-      `(define* ,(first head) (fn ,(rest head) (block ,name ,@tail)))     
+      (let ((name (first head))
+            (args (rest head)))
+        `(define* ,name (fn ,args (block ,name ,@tail))))     
       `(define* ,head ,(first tail))))
 
+(define-macro (do variables exit+result :& body)
+  (define specs  (.map variables (fn (ls) (.toArray ls))))
+  (define test   (first exit+result))
+  (define result (rest exit+result))
+  (define label  (gensym "label"))
+  (.map specs (fn (spec) (.push spec (gensym spec.0))))  
+  
+  (define inits [])
+  (define steps [])
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push inits `(define ,spec.3 ,spec.1))))
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push inits `(define ,spec.0 ,spec.3))))
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push steps `(set ,spec.3 ,spec.2))))
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push steps `(set ,spec.0 ,spec.3))))
+  
+  `(let () 
+     ,@inits
+     (block ,label
+            (loop
+             (when ,test (return-from ,label (begin ,@result)))
+             ,@body
+             ,@steps))))
+
+(define-macro (do* variables exit+result :& body)
+  (define specs  (.map variables (fn (ls) (.toArray ls))))
+  (define test   (first exit+result))
+  (define result (rest exit+result))
+  (define label  (gensym "label"))
+  
+  (define inits [])
+  (define steps [])
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push inits `(define ,spec.0 ,spec.1))))
+
+  (.forEach specs 
+    (fn (spec) 
+        (.push steps `(set ,spec.0 ,spec.2))))
+  
+  `(let () 
+     ,@inits
+     (block ,label
+            (loop
+             (when ,test (return-from ,label (begin ,@result)))
+             ,@body
+             ,@steps))))

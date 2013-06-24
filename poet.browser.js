@@ -78,7 +78,6 @@ List.Cons.prototype.concat = function(ls) {
     return this.tail.concat(ls).cons(this.head)
 }
 
-
 // END poet.list.js
 
 // BEGIN poet.symbol.js
@@ -212,6 +211,14 @@ Symbol.Qualified.prototype.ensureTag = function(tag) {
     return this
 }
 
+function gensym(suffix) {
+    suffix = suffix ? suffix : "G"
+    var id = gensym.nextId++    
+    return new Symbol.Simple("#:" + id + "-" + suffix)
+}
+
+gensym.nextId = 0
+
 // END poet.symbol.js
 
 // BEGIN poet.keyword.js
@@ -247,24 +254,25 @@ var DEFAULT_KEY = 'poet::generic-default'
 var CUSTOM_NAME = 'poet::name'
 
 function Generic(options) {
+    options   = options || {} 
     var index = options.index || 0
-    var name  = options.name || null
+    var name  = options.name  || null
     var key   = Generic.createKey(name) 
 
     function generic() {
-	var dispatcher = arguments[index]
-	var receiver   = dispatcher == null ? Generic.Null : dispatcher
-	var method     = receiver[key] || generic['poet::generic-default']
-	return method.apply(this, arguments)
+	      var dispatcher = arguments[index]
+	      var receiver   = dispatcher == null ? Generic.Null : dispatcher
+	      var method     = receiver[key] || generic[DEFAULT_KEY]
+	      return method.apply(this, arguments)
     }
     
-    generic['poet::generic-key'] = key
-    generic['poet::name'] = name    
-    generic['poet::generic-default'] = function() {
-	var dispatcher = arguments[index]
-	var typename   = dispatcher == null ? "#nil" : dispatcher.constructor.name
-	throw Error('no implementation of generic function ' + name + 
-		    ' for type ' + typename)
+    generic[GENERIC_KEY] = key
+    generic[CUSTOM_NAME] = name    
+    generic[DEFAULT_KEY] = function() {
+	      var dispatcher = arguments[index]
+	      var typename   = dispatcher == null ? "#nil" : dispatcher.constructor.name
+	      throw Error('no implementation of generic function ' + name + 
+		                ' for type ' + typename)
     }
 
     return generic
@@ -276,25 +284,34 @@ Generic.Null = {}
 Generic.nextId = 1
 
 Generic.createKey = function(suffix) {
-    var key = "poet::generic[" + this.nextId++ + "]"
-    return suffix ? key + suffix : key
+    var key = "poet::generic#" + this.nextId++
+    return suffix ? key + ":" + suffix : key
 }
 
 Generic.addMethod = function(gfn, type, impl) {
     if (('' + type) == 'default') {
-	gfn['poet::generic-default'] = impl
-    } 
+	      gfn['poet::generic-default'] = impl
+    }     
+
+    else if ((typeof type == 'function') || (type == null)) {
+	      var prototype  = (type == null) ? Generic.Null : type.prototype
+	      var key        = gfn['poet::generic-key']
+	      prototype[key] = impl 
+    }
+
+    else if (typeof type == 'object') {
+        var key   = gfn['poet::generic-key']
+        type[key] = impl        
+    }
 
     else {
-	var prototype  = (type == null) ? Generic.Null : type.prototype
-	var key        = gfn['poet::generic-key']
-	prototype[key] = impl 
+        throw Error('cannot attach generic method to ' + (typeof type))
     }
 } 
 
 Generic.addMethods = function(gfn) {
     for (var i=1; i<arguments.length;) {
-	Generic.addMethod(gfn, arguments[i++], arguments[i++])
+	      Generic.addMethod(gfn, arguments[i++], arguments[i++])
     }
     return gfn
 }
@@ -305,8 +322,8 @@ function _print_sequence(xs, p, e, sep) {
     sep = sep || " "    
     var flag = false
     for (var i=0; i<xs.length; i++) {
-	if (flag) { p.write(sep) } else { flag = true }
-	_print(xs[i], p, e)
+	      if (flag) { p.write(sep) } else { flag = true }
+	      _print(xs[i], p, e)
     }
 }
 
@@ -314,77 +331,77 @@ Generic.addMethods(
     _print,
 
     'default', function(x, p, e) {
-	var cnst = x.constructor
-	var name = cnst ? cnst['poet::name'] || cnst.name : null
-	name = name || 'Object'
-	p.write("#<" + name + ">")
+	      var cnst = x.constructor
+	      var name = cnst ? cnst['poet::name'] || cnst.name : null
+	      name = name || 'Object'
+	      p.write("#<" + name + ">")
     },
 
     null, function(x, p, e) {
-	p.write("#nil")
+	      p.write("#nil")
     },
 
     Boolean, function(x, p, e) {
-	p.write(x.valueOf() ? "#t" : "#f")
+	      p.write(x.valueOf() ? "#t" : "#f")
     },
 
     Number, function(x, p, e) {
-	p.write(x.toString())
+	      p.write(x.toString())
     },    
 
     String, function(x, p, e) {
-	p.write(e ? JSON.stringify(x) : x.valueOf())
+	      p.write(e ? JSON.stringify(x) : x.valueOf())
     },
 
     Function, function(x, p, e) {
-	p.write("#<fn")
-	var name = x['poet::name'] || x.name
-	if (name) { p.write(":" + name) }
-	p.write(">")
+	      p.write("#<fn")
+	      var name = x['poet::name'] || x.name
+	      if (name) { p.write(":" + name) }
+	      p.write(">")
     },
 
     Array, function(xs, p, e) {
-	p.write("[")
-	_print_sequence(xs, p, e)
-	p.write("]")
+	      p.write("[")
+	      _print_sequence(xs, p, e)
+	      p.write("]")
     },
 
     List.Nil, function(xs, p, e) {
-	p.write("()")
+	      p.write("()")
     },
 
     List.Cons, function(xs, p, e) {
-	var head = xs.first()
+	      var head = xs.first()
 
-	if (head instanceof Symbol.Qualified &&
-	    head.namespace == 'poet' &&
-	    head.name == 'quote') {
-	    p.write("'")
-	    _print(xs.rest().first(), p, e)
-	} 
+	      if (head instanceof Symbol.Qualified &&
+	          head.namespace == 'poet' &&
+	          head.name == 'quote') {
+	          p.write("'")
+	          _print(xs.rest().first(), p, e)
+	      } 
 
-	else {
-	    p.write("(")
-	    _print_sequence(xs.toArray(), p, e)
-	    p.write(")")	
-	}
+	      else {
+	          p.write("(")
+	          _print_sequence(xs.toArray(), p, e)
+	          p.write(")")	
+	      }
 
     },
 
     Symbol.Qualified, function(x, p, e) {
-	p.write("##" + x.namespace + "#" + x.name)
+	      p.write("##" + x.namespace + "#" + x.name)
     },
 
     Symbol.Tagged, function(x, p, e) {
-	_print(x.symbol, p, e)
+	      _print(x.symbol, p, e)
     },
 
     Symbol.Simple, function(x, p, e) {
-	p.write(x.name)
+	      p.write(x.name)
     },
 
     Keyword, function(x, p, e) {
-	p.write(":" + x.name)
+	      p.write(":" + x.name)
     }
 
 )
@@ -435,10 +452,10 @@ Generic.addMethods(
     rest,
     List.Cons, function(x) { return x.tail },
     Array, function(x) { 
-	var ls = new List.Nil
-	var i = x.length
-	while (i>1) { i--; ls = new List.Cons(x[i], ls) }
-	return ls
+	      var ls = new List.Nil
+	      var i = x.length
+	      while (i>1) { i--; ls = new List.Cons(x[i], ls) }
+	      return ls
     }
 )
 
@@ -451,8 +468,131 @@ Generic.addMethods(
 )
 
 
-
 // END poet.generic.js
+
+// BEGIN poet.iterable.js
+
+function EmptyError() {
+    throw Error('.next called on empty iterator')
+}
+
+function NullIterator() {}
+
+NullIterator.prototype.hasNext = function() { 
+    return false 
+}
+
+NullIterator.prototype.next = function() { 
+    EmptyError() 
+}
+
+function ArrayIterator(array) {
+    this.array = array
+    this.index = 0
+}
+
+ArrayIterator.prototype.hasNext = function() {
+    return this.index < this.array.length
+}
+
+ArrayIterator.prototype.next = function() {
+    if (this.index < this.array.length) {
+        return this.array[this.index++] 
+    } else {
+        EmptyError()
+    }
+}
+
+function ListIterator(list) {
+    this.list = list    
+}
+
+ListIterator.prototype.hasNext = function() {    
+    return this.list instanceof List.Cons
+}
+
+ListIterator.prototype.next = function() {
+    if (this.list instanceof List.Cons) {
+        var elt   = this.list.head
+        this.list = this.list.tail
+        return elt 
+    } else {
+        EmptyError()
+    }
+}
+
+var toIterator = Generic({name: '->iterator'})
+
+Generic.addMethods(
+    toIterator,
+    null,  function(_) { return new NullIterator() },
+    Array, function(array) { return new ArrayIterator(array) },
+    List,  function(list) { return new ListIterator(list) }    
+)
+
+function forEach(func, coll) {
+    var iter = toIterator(coll)
+    while (iter.hasNext()) {
+        func(iter.next())
+    }
+}
+
+function forEach_(func) {
+    var iters = []
+    var args  = []
+
+    for (var i=1; i<arguments.length; i++) {
+        iters.push(toIterator(arguments[i]))
+    }
+
+    for (;;) {
+        for (var i=0; i<iters.length; i++) {
+            var iter = iters[i]
+            if (!iter.hasNext()) { return }
+            args[i] = iter.next()
+        } 
+        func.apply(null, args)
+    }
+}
+
+
+
+// END poet.iterable.js
+
+// BEGIN poet.pubsub.js
+
+var subscriptions = {}
+
+function getSubscribers(key) {
+    if (!subscriptions[key]) { subscriptions[key] = [] }
+    return subscriptions[key]
+}
+
+function subscribe(key, callback) {
+    var subscribers = getSubscribers(key)
+    for (var i=0; i<=subscribers.length; i++) {
+	if (!subscribers[i]) {
+	    subscribers[i] = callback
+	    callback['poet:pubsub:' + key] = i
+	    return
+	}
+    }
+}
+
+function unsubscribe(key, callback) {
+    var index       = callback['poet:pubsub:' + key]
+    var subscribers = getSubscribers(key)
+    subscribers[index] = null
+}
+
+function publish(key, data) {
+    getSubscribers(key).forEach(function(subscriber) {
+	if (subscriber) { subscriber(data) }
+    })
+}
+
+
+// END poet.pubsub.js
 
 // BEGIN poet.runtime.js
 
@@ -477,242 +617,257 @@ var RT = {
     'poet::print'   : print,
     'poet::println' : println,
     'poet::newline' : newline,    
+    'poet::Generic' : Generic,    
+    'poet::gensym'  : gensym,
 
+    'poet::for-each'  : forEach,
+    'poet::for-each*' : forEach_,
+ 
     'poet::symbol' : function(namespace, name) {
-	switch(arguments.length) {
-	case 1: 
-	    name = namespace
-	    namespace = null
-	case 2: 
-	    return namespace ?
-		new Symbol.Qualified(namespace, name) :
-		new Symbol.Simple(name)
-	default:
-	    throw Error(
-		'poet::symbol requires 1 or 2 arguments but got ' + 
-		    arguments.length
-	    )
-	}
+	      switch(arguments.length) {
+	      case 1: 
+	          name = namespace
+	          namespace = null
+	      case 2: 
+	          return namespace ?
+		            new Symbol.Qualified(namespace, name) :
+		            new Symbol.Simple(name)
+	      default:
+	          throw Error(
+		            'poet::symbol requires 1 or 2 arguments but got ' + 
+		                arguments.length
+	          )
+	      }
     },
 
     'poet::keyword' : function(x) {
-	if (x instanceof Keyword) {
-	    return x
-	} else {
-	    return new Keyword('' + x)
-	}
+	      if (x instanceof Keyword) {
+	          return x
+	      } else {
+	          return new Keyword('' + x)
+	      }
     },
 
     'poet::list' : List.create,
     'poet::array->list' : List.fromArray,
 
     'poet::acat' : function() {
-	var res = []
-	function push(x) { res.push(x) }
-	for (var i=0; i<arguments.length; i++) {
-	    if (arguments[i]) { arguments[i].forEach(push) }
-	}
-	return res
+	      var res = []
+	      function push(x) { res.push(x) }
+	      for (var i=0; i<arguments.length; i++) {
+	          if (arguments[i]) { arguments[i].forEach(push) }
+	      }
+	      return res
     },
 
     'poet::+' : function(x, y) {
-	switch(arguments.length) {
-	case 0: return 0
-	case 1: return x
-	case 2: return x + y
-	default:
-	    var r = x + y
-	    var i = 2;
-	    while (i<arguments.length) { r += arguments[i++] }
-	    return r
-	}
+	      switch(arguments.length) {
+	      case 0: return 0
+	      case 1: return x
+	      case 2: return x + y
+	      default:
+	          var r = x + y
+	          var i = 2;
+	          while (i<arguments.length) { r += arguments[i++] }
+	          return r
+	      }
     },
 
     'poet::*' : function(x, y) {
-	switch(arguments.length) {
-	case 0: return 1
-	case 1: return x
-	case 2: return x * y
-	default:
-	    var r = x * y
-	    var i = 2;
-	    while (i<arguments.length) { r *= arguments[i++] }
-	    return r
-	}
+	      switch(arguments.length) {
+	      case 0: return 1
+	      case 1: return x
+	      case 2: return x * y
+	      default:
+	          var r = x * y
+	          var i = 2;
+	          while (i<arguments.length) { r *= arguments[i++] }
+	          return r
+	      }
     },
 
     'poet::-' : function(x, y) {
-	switch(arguments.length) {
-	case 0: throw Error('poet::- requires at least one argument')
-	case 1: return -x
-	case 2: return x - y
-	default:
-	    var r = x - y
-	    var i = 2;
-	    while (i<arguments.length) { r -= arguments[i++] }
-	    return r
-	}
+	      switch(arguments.length) {
+	      case 0: throw Error('poet::- requires at least one argument')
+	      case 1: return -x
+	      case 2: return x - y
+	      default:
+	          var r = x - y
+	          var i = 2;
+	          while (i<arguments.length) { r -= arguments[i++] }
+	          return r
+	      }
     },
 
     'poet::/' : function(x, y) {
-	switch(arguments.length) {
-	case 0: throw Error('poet::/ requires at least one argument')
-	case 1: return 1/x
-	case 2: return x / y
-	default:
-	    var r = x/y
-	    var i = 2;
-	    while (i<arguments.length) { r /= arguments[i++] }
-	    return r
-	}
+	      switch(arguments.length) {
+	      case 0: throw Error('poet::/ requires at least one argument')
+	      case 1: return 1/x
+	      case 2: return x / y
+	      default:
+	          var r = x/y
+	          var i = 2;
+	          while (i<arguments.length) { r /= arguments[i++] }
+	          return r
+	      }
     },
 
     'poet::<' : function(x, y) {
-	switch (arguments.length) {
-	    case 0: throw Error('poet::< requires at least one argument')
-	    case 1: return true
-	    case 2: return x<y
-	    default:
-	    var r = x<y
-	    var i = 2
-	    while (i<arguments.length && r) { x=y; y=arguments[i]; r=x<y }
-	    return r	    
-	}
+	      switch (arguments.length) {
+	      case 0: throw Error('poet::< requires at least one argument')
+	      case 1: return true
+	      case 2: return x<y
+	      default:
+	          var r = x<y
+	          var i = 2
+	          while (i<arguments.length && r) { x=y; y=arguments[i]; r=x<y }
+	          return r	    
+	      }
     },
 
     'poet::>' : function(x, y) {
-	switch (arguments.length) {
-	    case 0: throw Error('poet::> requires at least one argument')
-	    case 1: return true
-	    case 2: return x>y
-	    default:
-	    var r = x>y
-	    var i = 2
-	    while (i<arguments.length && r) { x=y; y=arguments[i]; r=x>y }
-	    return r	    
-	}
+	      switch (arguments.length) {
+	      case 0: throw Error('poet::> requires at least one argument')
+	      case 1: return true
+	      case 2: return x>y
+	      default:
+	          var r = x>y
+	          var i = 2
+	          while (i<arguments.length && r) { x=y; y=arguments[i]; r=x>y }
+	          return r	    
+	      }
     },
 
     'poet::<=' : function(x, y) {
-	switch (arguments.length) {
-	    case 0: throw Error('poet::<= requires at least one argument')
-	    case 1: return true
-	    case 2: return x<=y
-	    default:
-	    var r = x<=y
-	    var i = 2
-	    while (i<arguments.length && r) { x=y; y=arguments[i]; r=x<=y }
-	    return r	    
-	}
+	      switch (arguments.length) {
+	      case 0: throw Error('poet::<= requires at least one argument')
+	      case 1: return true
+	      case 2: return x<=y
+	      default:
+	          var r = x<=y
+	          var i = 2
+	          while (i<arguments.length && r) { x=y; y=arguments[i]; r=x<=y }
+	          return r	    
+	      }
     },
 
     'poet::>=' : function(x, y) {
-	switch (arguments.length) {
-	    case 0: throw Error('poet::>= requires at least one argument')
-	    case 1: return true
-	    case 2: return x>=y
-	    default:
-	    var r = x>=y
-	    var i = 2
-	    while (i<arguments.length && r) { x=y; y=arguments[i]; r=x>=y }
-	    return r	    
-	}
+	      switch (arguments.length) {
+	      case 0: throw Error('poet::>= requires at least one argument')
+	      case 1: return true
+	      case 2: return x>=y
+	      default:
+	          var r = x>=y
+	          var i = 2
+	          while (i<arguments.length && r) { x=y; y=arguments[i]; r=x>=y }
+	          return r	    
+	      }
     },
 
     'poet::=' : function(x, y) {
-	switch (arguments.length) {
-	    case 0: throw Error('poet::< requires at least one argument')
-	    case 1: return true
-	    case 2: return x===y
-	    default:
-	    var r = x===y
-	    var i = 2
-	    while (i<arguments.length && r) { x=y; y=arguments[i]; r=x===y }
-	    return r	    
-	}
+	      switch (arguments.length) {
+	      case 0: throw Error('poet::= requires at least one argument')
+	      case 1: return true
+	      case 2: return x===y
+	      default:
+	          var r = x===y
+	          var i = 2
+	          while (i<arguments.length && r) { x=y; y=arguments[i]; r=x===y }
+	          return r	    
+	      }
     },
 
     'poet::mod' : function(x, y) {
-	return x % y
+	      return x % y
     },
 
     'poet::div' : function(x, y) {
-	return Math.floor(x/y)
+	      return Math.floor(x/y)
     },
 
     'poet::array?' : Array.isArray,
 
     'poet::list?' : function(x) {
-	return x instanceof List
+	      return x instanceof List
     },
 
     'poet::symbol?' : function(x) {
-	return x instanceof Symbol
+	      return x instanceof Symbol
     },
 
     'poet::keyword?' : function(x) {
-	return x instanceof Keyword
+	      return x instanceof Keyword
     },
 
     'poet::boolean?' : function(x) {
-	return typeof x == 'boolean'
+	      return typeof x == 'boolean'
     },
 
     'poet::number?' : function(x) {
-	return typeof x == 'number'
+	      return typeof x == 'number'
     },
 
     'poet::string?' : function(x) {
-	return typeof x == 'string'
+	      return typeof x == 'string'
     },
 
     'poet::array' : function() {
-	var len = arguments.length
-	var arr = new Array(len)
-	for (var i=0; i<len; i++) { arr[i] = arguments[i] }
-	return arr
+	      var len = arguments.length
+	      var arr = new Array(len)
+	      for (var i=0; i<len; i++) { arr[i] = arguments[i] }
+	      return arr
     },
 
     'poet::array*' : function() {
-	var alen = arguments.length
-	var b    = arguments[alen-1]
-	var blen = b.length
-	var arr = new Array(alen+blen-1)
-	for (var i=0; i<alen-1; i++) { arr[i]   = arguments[i] }	
-	for (var j=0; j<blen; j++)   { arr[i+j] = b[j] }
-	return arr
+	      var alen = arguments.length
+	      var b    = arguments[alen-1]
+	      var blen = b.length
+	      var arr = new Array(alen+blen-1)
+	      for (var i=0; i<alen-1; i++) { arr[i]   = arguments[i] }	
+	      for (var j=0; j<blen; j++)   { arr[i+j] = b[j] }
+	      return arr
     },
 
     'poet::concat' : function() {
-	var res = []
-	for (var i=0; i<arguments.length; i++) {
-	    var xs = arguments[i]
-	    if (xs) {
-		for (var j=0; j<xs.length; j++) {
-		    res.push(xs[j])
-		}
-	    }
-	}
-	return res
+	      var res = []
+	      for (var i=0; i<arguments.length; i++) {
+	          var xs = arguments[i]
+	          if (xs) {
+		            for (var j=0; j<xs.length; j++) {
+		                res.push(xs[j])
+		            }
+	          }
+	      }
+	      return res
     },
-   
+    
     'poet::apply' : function(f) {
-	var len  = arguments.length
-	var more = arguments[len-1]
-	var args = []
+	      var len  = arguments.length
+	      var more = arguments[len-1]
+	      var args = []
 
-	for (var i=0; i<len-2; i++) {
-	    args.push(arguments[i])
-	}
+	      for (var i=0; i<len-2; i++) {
+	          args.push(arguments[i])
+	      }
 
-	more.forEach(function(x) { args.push(x) })
-	return f.apply(null, args)
+	      more.forEach(function(x) { args.push(x) })
+	      return f.apply(null, args)
     },   
 
     'poet::first'  : first,
     'poet::rest'   : rest,
     'poet::empty?' : isEmpty,
-    'poet::cons'   : cons
+    'poet::cons'   : cons,
+
+    'poet::Boolean'  : Boolean,
+    'poet::Number'   : Number,
+    'poet::String'   : String,
+    'poet::Object'   : Object,
+    'poet::Function' : Function,
+    'poet::Array'    : Array,
+    'poet::Date'     : Date,
+    'poet::RegExp'   : RegExp,
+    'poet::NaN'      : NaN   
 
 }
 
@@ -727,26 +882,26 @@ function isTruthy(obj) {
 if (typeof process == 'undefined') {
 
     RT['poet::*out*'] = {
-	buffer: "",
+	      buffer: "",
 
-	write: function(txt) {
-	    this.buffer += txt	    
-	    var lines = this.buffer.split('\n')
-	    for (var i=0; i<lines.length; i++) {
-		if (i<lines.length-1) { 
-		    console.log(lines[i]) 
-		} else {
-		    this.buffer = lines[i]
-		}
-	    }
-	},
+	      write: function(txt) {
+	          this.buffer += txt	    
+	          var lines = this.buffer.split('\n')
+	          for (var i=0; i<lines.length; i++) {
+		            if (i<lines.length-1) { 
+		                console.log(lines[i]) 
+		            } else {
+		                this.buffer = lines[i]
+		            }
+	          }
+	      },
 
-	flush: function() {
-	    this.buffer.split('\n').forEach(function(line) {
-		console.log(line)
-	    })
-	    this.buffer = ""
-	}
+	      flush: function() {
+	          this.buffer.split('\n').forEach(function(line) {
+		            console.log(line)
+	          })
+	          this.buffer = ""
+	      }
 
     }
 
@@ -765,17 +920,17 @@ if (typeof __dirname != 'undefined') {
     RT['poet::*load-path*'].push(path.dirname(process.argv[1]))
     RT['poet::*load-path*'].push(__dirname)
     RT['poet::slurp'] = function(filename) {
-	var fs    = require('fs')
-	var path  = require('path')
-	var paths = RT['poet::*load-path*']
-	for (var i=0; i<paths.length; i++) {
-	    var abspath = path.join(paths[i], filename)
-	    if (fs.existsSync(abspath)) { 
-		return fs.readFileSync(abspath, 'utf8') 
-	    }
-	}
-	throw Error('file not found: ' + filename) 
-    }
+	      var fs    = require('fs')
+	      var path  = require('path')
+	      var paths = RT['poet::*load-path*']
+	      for (var i=0; i<paths.length; i++) {
+	          var abspath = path.join(paths[i], filename)
+	          if (fs.existsSync(abspath)) { 
+		            return fs.readFileSync(abspath, 'utf8') 
+	          }
+	      }
+	      throw Error('file not found: ' + filename) 
+    }    
 }
 
 // END poet.runtime.js
