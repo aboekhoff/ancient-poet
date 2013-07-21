@@ -480,8 +480,8 @@ function expandSpecialForm(e, x, n) {
     case 'new':
         return expandSexps(e, x.rest()).cons(Symbol.builtin('new'))
 
-    case 'set':
-	      return expandSexps(e, x.rest()).cons(Symbol.builtin('set'))
+    case 'set!':
+	      return expandSexps(e, x.rest()).cons(Symbol.builtin('set!'))
 
     case '.':
 	      return expandSexps(e, x.rest()).cons(Symbol.builtin('.'))

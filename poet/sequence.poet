@@ -1,0 +1,47 @@
+(require poet)
+
+(define-generic map 1)
+(define-generic filter 1)
+(define-generic take 1)
+(define-generic drop 1)
+(define-generic nth 1)
+
+(extend-type List  
+   ((take n xs)
+    (.take n xs))
+
+   ((drop n xs)
+    (.drop n xs))   
+
+   ((map f xs) 
+    (.map xs f))
+
+   ((filter pred xs)
+    (.filter xs (fn (x) (if (pred x) #t #f)))))
+
+(extend-type String
+  ((take n xs)
+   (.substring 0 n xs))
+
+  ((drop n xs)
+   (.substring n xs))
+
+  ((map f xs)
+   Array.prototype.map.call(xs, (fn (x) (f x))))
+
+  ((filter f xs)
+   Array.prototype.filter.call(xs, (fn (x) (if (f x) #t #f)))))   
+
+(extend-type Array
+   ((take n xs)
+    (.slice xs 0 n))
+
+   ((drop n xs)
+    (.slice xs n))
+
+   ((map f xs) 
+    (.map xs (fn (x) (f x))))
+
+   ((filter pred xs)
+    (.filter xs (fn (x) (if (pred x) #t #f)))))
+

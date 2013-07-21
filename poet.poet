@@ -96,11 +96,11 @@
 
   (.forEach specs 
     (fn (spec) 
-        (.push steps `(set ,spec.3 ,spec.2))))
+        (.push steps `(set! ,spec.3 ,spec.2))))
 
   (.forEach specs 
     (fn (spec) 
-        (.push steps `(set ,spec.0 ,spec.3))))
+        (.push steps `(set! ,spec.0 ,spec.3))))
   
   `(let () 
      ,@inits
@@ -125,7 +125,7 @@
 
   (.forEach specs 
     (fn (spec) 
-        (.push steps `(set ,spec.0 ,spec.2))))
+        (.push steps `(set! ,spec.0 ,spec.2))))
   
   `(let () 
      ,@inits
@@ -134,3 +134,37 @@
              (when ,test (return-from ,label (begin ,@result)))
              ,@body
              ,@steps))))
+
+(define-macro (return value)
+  `(return-from #nil ,value))
+
+(define-macro (inc! loc)     
+  `(set! ,loc (+ ,loc 1)))
+
+(define-macro (dec! loc)     
+  `(set! ,loc (- ,loc 1)))
+
+;; functions
+;; not is dependent on semantics of if
+;; so we define it here using if
+
+(define (not x) (if x #f #t))
+
+;; generic helpers
+
+(define-macro (define-generic name index)
+  `(define ,name (Generic {:name ',name :index ,(or index 0)})))
+
+(define-macro (extend-type type :& decls)
+  (define (expand-decl decl)
+    (define flist (first decl))
+    (define body  (rest decl))
+    (define name  (first flist))
+    (define args  (rest flist))
+    `(Generic.addMethod ,name ,type (fn ,args ,@body)))
+  `(begin ,@(.map decls expand-decl)))
+  
+  
+
+
+

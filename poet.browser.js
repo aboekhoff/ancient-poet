@@ -249,6 +249,7 @@ Keyword.prototype.toString = function() {
 // still not sure if we want to implement these in javascript or not
 // but they make writing printers much easier
 
+var INDEX_KEY   = 'poet::generic-index'
 var GENERIC_KEY = 'poet::generic-key'
 var DEFAULT_KEY = 'poet::generic-default'
 var CUSTOM_NAME = 'poet::name'
@@ -265,7 +266,8 @@ function Generic(options) {
 	      var method     = receiver[key] || generic[DEFAULT_KEY]
 	      return method.apply(this, arguments)
     }
-    
+
+    generic[INDEX_KEY]   = index
     generic[GENERIC_KEY] = key
     generic[CUSTOM_NAME] = name    
     generic[DEFAULT_KEY] = function() {
@@ -430,10 +432,11 @@ function println() {
 
 // list functions
 
-var cons    = Generic({name: "cons", index: 1})
-var first   = Generic({name: "first"})
-var rest    = Generic({name: "rest"})
-var isEmpty = Generic({name: "empty?"})
+var cons     = Generic({name: "cons", index: 1})
+var first    = Generic({name: "first"})
+var rest     = Generic({name: "rest"})
+var isEmpty  = Generic({name: "empty?"})
+var iterator = Generic({name: "iterator"})
 
 Generic.addMethods(
     cons,
@@ -464,9 +467,8 @@ Generic.addMethods(
     null, function(_) { return true },
     List.Nil, function(_) { return true },
     List.Cons, function(x) { return false },    
-    Array, function(x) { return x.length == 0 }
+    Array, function(x) { return x.length == 0 }    
 )
-
 
 // END poet.generic.js
 
@@ -521,17 +523,30 @@ ListIterator.prototype.next = function() {
     }
 }
 
-var toIterator = Generic({name: '->iterator'})
+var makeIterator = Generic({name: 'make-iterator'})
 
 Generic.addMethods(
-    toIterator,
-    null,  function(_) { return new NullIterator() },
-    Array, function(array) { return new ArrayIterator(array) },
-    List,  function(list) { return new ListIterator(list) }    
+    makeIterator,
+    'default', function(x) {
+        if (x instanceof Object && 'length' in x) {
+            return new ArrayIterator(x)
+        }
+    },
+    null,   function(_)      { return new NullIterator() },
+    List,   function(list)   { return new ListIterator(list) },
+    String, function(string) { return new ArrayIterator(string) },
+    Array,  function(array)  { return new ArrayIterator(array) }
 )
 
+if (typeof NodeList != 'undefined') {
+    Generic.addMethods(
+        makeIterator,
+        NodeList, function(array) { return new ArrayIterator(array) }
+    )
+}
+
 function forEach(func, coll) {
-    var iter = toIterator(coll)
+    var iter = makeIterator(coll)
     while (iter.hasNext()) {
         func(iter.next())
     }
@@ -542,7 +557,7 @@ function forEach_(func) {
     var args  = []
 
     for (var i=1; i<arguments.length; i++) {
-        iters.push(toIterator(arguments[i]))
+        iters.push(makeIterator(arguments[i]))
     }
 
     for (;;) {
@@ -555,6 +570,45 @@ function forEach_(func) {
     }
 }
 
+function _reduce(f, x, iter) {
+    while (iter.hasNext()) { x = f(x, iter.next()) }
+    return x
+}
+
+function reduce(f, a, b) {
+    switch(arguments.length) {
+    case 2: 
+        var iter = makeIterator(a)
+        return _reduce(f, iter.next(), iter)
+    case 3:
+        return _reduce(f, a, makeIterator(b))
+    default:
+        throw Error('reduce requires exactly 2 or 3 arguments')
+    }
+}
+
+function range(start, end, step) {
+    var res = []
+
+    if (arguments.length == 1) {
+        end   = start;
+        start = 0;
+        step  = 1;
+    }
+
+    if (start < end) {
+        step = step || 1
+        for (var i=start; i<=end; i+=step) { res.push(i) }
+    }
+
+    else if (end < start) {
+        step = step || -1
+        for (var i=start; i>=end; i+=step) { res.push(i) }
+    }
+
+    return res
+
+}
 
 
 // END poet.iterable.js
@@ -600,14 +654,17 @@ function publish(key, data) {
 
 var RT = {
 
+    'poet::*echo-js*'  : false,
+    'poet::*echo-sexp' : false,
+
     'poet::*load-path*' : ["."],
     'poet::*env*'       : null,
     'poet::*out*'       : null /* defined at end of file */,
     'poet::window'      : null /* defined at end of file */,	
     
     'poet::macroexpand-1' : null,
-    'poet::macroexpand' : null,
-    'poet::expand' : null,
+    'poet::macroexpand'   : null,
+    'poet::expand'        : null,
 
     'poet::List'    : List,
     'poet::Symbol'  : Symbol,
@@ -622,7 +679,9 @@ var RT = {
 
     'poet::for-each'  : forEach,
     'poet::for-each*' : forEach_,
- 
+    'poet::reduce'    : reduce,
+    'poet::range'     : range,
+
     'poet::symbol' : function(namespace, name) {
 	      switch(arguments.length) {
 	      case 1: 
@@ -777,12 +836,22 @@ var RT = {
 	      }
     },
 
+    'poet::zero?' : function(x) { return x === 0 },
+    'poet::even?' : function(x) { return !(x & 1) },
+    'poet::odd?'  : function(x) { return !!(x & 1) },
+    'poet::inc'   : function(x) { return (x + 1) },
+    'poet::dec'   : function(x) { return (x - 1) },
+
     'poet::mod' : function(x, y) {
 	      return x % y
     },
 
     'poet::div' : function(x, y) {
 	      return Math.floor(x/y)
+    },
+
+    'poet::instance?' : function(obj, type) {
+        return obj instanceof type
     },
 
     'poet::array?' : Array.isArray,
@@ -867,7 +936,22 @@ var RT = {
     'poet::Array'    : Array,
     'poet::Date'     : Date,
     'poet::RegExp'   : RegExp,
-    'poet::NaN'      : NaN   
+    'poet::NaN'      : NaN,
+    'poet::Error'    : Error,
+    'poet::Math'     : Math,
+
+    'poet::parseInt'   : parseInt,
+    'poet::parseFloat' : parseFloat,
+    'poet::infinity'   : Infinity,
+    'poet::-infinity'  : -Infinity,
+
+    'poet::object' : function() {
+        var obj = {}
+        for (var i=0, ii = arguments.length; i<ii; i+=2) {
+            obj[arguments[i]] = arguments[i+1]
+        }
+        return obj
+    }
 
 }
 
@@ -914,6 +998,10 @@ if (typeof process == 'undefined') {
 if (typeof window != 'undefined') {
     RT['poet::window'] = window
 } 
+
+if (typeof console != 'undefined') {
+    RT['poet::console'] = console
+}
 
 if (typeof __dirname != 'undefined') {
     var path = require('path')

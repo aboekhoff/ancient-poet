@@ -1,8 +1,9 @@
 var fs   = require('fs')
 var path = require('path')
 
-SRC_DIR    = 'src'
-OUTPUT_DIR = ''
+ROOT_DIR   = __dirname
+SRC_DIR    = path.join(ROOT_DIR, 'src')
+OUTPUT_DIR = ROOT_DIR
 COMPILER_TARGETS = [
     'poet.list.js', 
     'poet.symbol.js', 
@@ -33,7 +34,7 @@ BROWSER_RUNTIME_TARGETS = [
 
 // node poet
 
-var buf = ["#!/usr/bin/env node"]
+var buf = []
 
 for (var i=0; i<COMPILER_TARGETS.length; i++) {
     var target = COMPILER_TARGETS[i]
@@ -42,7 +43,7 @@ for (var i=0; i<COMPILER_TARGETS.length; i++) {
     buf.push("// END " + target + "\n")
 }
 
-fs.writeFileSync('poet.js', buf.join("\n"))
+fs.writeFileSync(path.join(OUTPUT_DIR, 'poet.js'), buf.join("\n"))
 
 // browser runtime
 
@@ -59,5 +60,5 @@ buf.unshift('!(function() {\n')
 buf.push('window.RT = RT')
 buf.push('\n})()')
 
-fs.writeFileSync('poet.browser.js', buf.join("\n"))
+fs.writeFileSync(path.join(OUTPUT_DIR, 'poet.browser.js'), buf.join("\n"))
 

@@ -1,6 +1,7 @@
 // still not sure if we want to implement these in javascript or not
 // but they make writing printers much easier
 
+var INDEX_KEY   = 'poet::generic-index'
 var GENERIC_KEY = 'poet::generic-key'
 var DEFAULT_KEY = 'poet::generic-default'
 var CUSTOM_NAME = 'poet::name'
@@ -17,7 +18,8 @@ function Generic(options) {
 	      var method     = receiver[key] || generic[DEFAULT_KEY]
 	      return method.apply(this, arguments)
     }
-    
+
+    generic[INDEX_KEY]   = index
     generic[GENERIC_KEY] = key
     generic[CUSTOM_NAME] = name    
     generic[DEFAULT_KEY] = function() {
@@ -182,10 +184,11 @@ function println() {
 
 // list functions
 
-var cons    = Generic({name: "cons", index: 1})
-var first   = Generic({name: "first"})
-var rest    = Generic({name: "rest"})
-var isEmpty = Generic({name: "empty?"})
+var cons     = Generic({name: "cons", index: 1})
+var first    = Generic({name: "first"})
+var rest     = Generic({name: "rest"})
+var isEmpty  = Generic({name: "empty?"})
+var iterator = Generic({name: "iterator"})
 
 Generic.addMethods(
     cons,
@@ -216,6 +219,5 @@ Generic.addMethods(
     null, function(_) { return true },
     List.Nil, function(_) { return true },
     List.Cons, function(x) { return false },    
-    Array, function(x) { return x.length == 0 }
+    Array, function(x) { return x.length == 0 }    
 )
-

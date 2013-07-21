@@ -197,7 +197,7 @@ function normalizeSexp(sexp) {
 	      case 'unwind-protect' :
 	          return normalizeUnwindProtect(sexp.slice(1))
 	          
-	      case 'set' :
+	      case 'set!' :
 	          return ['SET', normalizeSexp(sexp[1]), normalizeSexp(sexp[2])]
 
 	      case 'loop' : 

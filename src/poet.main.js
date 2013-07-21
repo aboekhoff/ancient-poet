@@ -15,9 +15,9 @@ RT['poet::macroexpand'] = function(sexp) {
 var specialForms = [
     'define*', 'define-macro*', 
     'quote', 'quasiquote', 'unquote', 'unquote-splicing',
-    'fn*', 'let*', 'letrec*', 'begin', 'if', 'set',
+    'fn*', 'let*', 'letrec*', 'begin', 'if', 'set!',
     'block', 'loop', 'return-from', 'unwind-protect', 'throw', 'js*',
-    'require', 'new'
+    'require', 'new', "."
 ]
 
 specialForms.forEach(function(name) {
@@ -114,7 +114,7 @@ function expandTopLevel(config) {
 		                var sym  = sexp.rest().first()
 		                var loc  = bindGlobal(env, sym)		
 		                var expr = sexp.rest().rest().first()
-		                sexp = List.create(Symbol.builtin('set'), loc, expr)
+		                sexp = List.create(Symbol.builtin('set!'), loc, expr)
 		            }	    
 		            
 		            var esexp   = expand(env, sexp)		
@@ -220,6 +220,8 @@ function p(x) {
 
 var poet_preamble = ""
 
+var ECHO = false
+
 function compileModule(module, main) {
     var buf = [poet_preamble]    
     function append(data) { 
@@ -227,12 +229,21 @@ function compileModule(module, main) {
 	      // when emitting a compiled file 
 	      // we have to wrap any top level expressions
 	      // that create local variables
-        console.log(js)
+
+        if (RT['poet::*echo-js*']) { 
+            console.log(js) 
+        }
+
 	      if (/^\s*var.*/.test(js)) { js = "!(function() {\n" + js + "\n})();" }		    
 	      buf.push(js) 
     }
     subscribe('poet:emit-toplevel-expression', append)
-    subscribe('poet:macroexpand-toplevel-sexp', function(x) { prn(x.sexp) })
+
+    subscribe(
+        'poet:macroexpand-toplevel-sexp', 
+        function(x) { if(RT['poet::*echo-sexp*']) { prn(x.sexp) } }
+    ) 
+
     Env.load(module)
     unsubscribe('poet:emit-toplevel-expression', append)
     if (main) {	ebuf.push('\nRT[' + JSON.stringify(main) + ']()') }

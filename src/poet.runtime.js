@@ -2,14 +2,17 @@
 
 var RT = {
 
+    'poet::*echo-js*'  : false,
+    'poet::*echo-sexp' : false,
+
     'poet::*load-path*' : ["."],
     'poet::*env*'       : null,
     'poet::*out*'       : null /* defined at end of file */,
     'poet::window'      : null /* defined at end of file */,	
     
     'poet::macroexpand-1' : null,
-    'poet::macroexpand' : null,
-    'poet::expand' : null,
+    'poet::macroexpand'   : null,
+    'poet::expand'        : null,
 
     'poet::List'    : List,
     'poet::Symbol'  : Symbol,
@@ -24,7 +27,9 @@ var RT = {
 
     'poet::for-each'  : forEach,
     'poet::for-each*' : forEach_,
- 
+    'poet::reduce'    : reduce,
+    'poet::range'     : range,
+
     'poet::symbol' : function(namespace, name) {
 	      switch(arguments.length) {
 	      case 1: 
@@ -179,12 +184,22 @@ var RT = {
 	      }
     },
 
+    'poet::zero?' : function(x) { return x === 0 },
+    'poet::even?' : function(x) { return !(x & 1) },
+    'poet::odd?'  : function(x) { return !!(x & 1) },
+    'poet::inc'   : function(x) { return (x + 1) },
+    'poet::dec'   : function(x) { return (x - 1) },
+
     'poet::mod' : function(x, y) {
 	      return x % y
     },
 
     'poet::div' : function(x, y) {
 	      return Math.floor(x/y)
+    },
+
+    'poet::instance?' : function(obj, type) {
+        return obj instanceof type
     },
 
     'poet::array?' : Array.isArray,
@@ -269,7 +284,22 @@ var RT = {
     'poet::Array'    : Array,
     'poet::Date'     : Date,
     'poet::RegExp'   : RegExp,
-    'poet::NaN'      : NaN   
+    'poet::NaN'      : NaN,
+    'poet::Error'    : Error,
+    'poet::Math'     : Math,
+
+    'poet::parseInt'   : parseInt,
+    'poet::parseFloat' : parseFloat,
+    'poet::infinity'   : Infinity,
+    'poet::-infinity'  : -Infinity,
+
+    'poet::object' : function() {
+        var obj = {}
+        for (var i=0, ii = arguments.length; i<ii; i+=2) {
+            obj[arguments[i]] = arguments[i+1]
+        }
+        return obj
+    }
 
 }
 
@@ -316,6 +346,10 @@ if (typeof process == 'undefined') {
 if (typeof window != 'undefined') {
     RT['poet::window'] = window
 } 
+
+if (typeof console != 'undefined') {
+    RT['poet::console'] = console
+}
 
 if (typeof __dirname != 'undefined') {
     var path = require('path')

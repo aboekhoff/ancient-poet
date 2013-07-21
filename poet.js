@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // BEGIN poet.list.js
 
 function List() {}
@@ -507,11 +506,11 @@ Reader.create = function(options) {
     return reader;
 }
 
-Reader.hexRegex    = /0(x|X)[0-9a-fA-F]+/;
-Reader.octRegex    = /0[0-7]+/;
-Reader.intRegex    = /[0-9]+/;
-Reader.floatRegex  = /[0-9]+\.[0-9]+/;
-Reader.binaryRegex = /0(b|B)[01]+/;
+Reader.hexRegex    = /^0(x|X)[0-9a-fA-F]+/;
+Reader.octRegex    = /^0[0-7]+/;
+Reader.intRegex    = /^(0)|[1-9][0-9]*/;
+Reader.floatRegex  = /^((0)|[1-9][0-9]*)\.[0-9]+/;
+Reader.binaryRegex = /^0(b|B)[01]+/;
 
 Reader.escapeMap = {
     'n'  : '\n',
@@ -535,6 +534,8 @@ Reader.notTerminal = function(c) {
     case ')':
     case '[':
     case ']':
+    case '{':
+    case '}':
     case '"':
     case "'":
     case '`':
@@ -670,6 +671,7 @@ Reader.prototype = {
 	      case ']': this.syntaxError('unmatched closing brace');
 	      case '(': return this.readList();
 	      case '[': return this.readArray();
+        case '{': return this.readObject();
 	      case '"': return this.readString();
 	      case "'": return this.readQuote();
 	      case ',': return this.readUnquote();
@@ -709,6 +711,32 @@ Reader.prototype = {
 	      return this.makeList(
 	          [Symbol.builtin(name), this.readSexp()]
 	      )
+
+    },
+
+    readObject: function() {
+	      var position = this.getPosition();		
+	      var list     = [];
+	      this.pop();
+
+	      loop:for(;;) {			
+	          this.readWhitespace();
+	          var c = this.peek();
+	          switch(c) {
+
+	          case null: 
+		            this.error('unclosed object-literal', position);
+		            
+	          case '}': 
+		            this.pop(); 
+		            break loop;
+
+	          default: 
+		            list.push(this.readSexp()); continue loop;
+	          }
+	      }
+
+        return List.fromArray(list).cons(Symbol.builtin('object'))
 
     },
 
@@ -767,9 +795,9 @@ Reader.prototype = {
 	          case '"' : return string.join("");
 	          case '\\':
 		            var position2 = this.getPosition();
-		            var cc = this.escapeMap[this.pop()];
+		            var cc = Reader.escapeMap[this.pop()];
 		            if (!cc) { this.error('invalid escape character', position2); }
-		            this.string.push(cc);
+		            string.push(cc);
 		            continue;
 	          default:
 		            string.push(c);
@@ -786,11 +814,21 @@ Reader.prototype = {
 	      }
 
 	      switch (true) {
-	      case Reader.floatRegex.test(string)  : return sign * parseFloat(string);
-	      case Reader.hexRegex.test(string)    : return sign * parseInt(string, 16);
-	      case Reader.octRegex.test(string)    : return sign * parseInt(string, 8);
-	      case Reader.binaryRegex.test(string) : return sign * parseInt(string, 2);
-	      case Reader.intRegex.test(string)    : return sign * parseInt(string, 10);
+	      case Reader.octRegex.test(string) : 
+            return sign * parseInt(string.substring(1), 8);
+
+	      case Reader.floatRegex.test(string) : 
+            return sign * parseFloat(string);
+
+	      case Reader.intRegex.test(string) : 
+            return sign * parseInt(string, 10);
+
+	      case Reader.hexRegex.test(string) : 
+            return sign * parseInt(string.substring(2), 16);
+
+	      case Reader.binaryRegex.test(string) : 
+            return sign * parseInt(string.substring(2), 2);
+
 	      default:
 	          throw Error('invalid number literal at ' + position);
 	      }
@@ -1336,8 +1374,8 @@ function expandSpecialForm(e, x, n) {
     case 'new':
         return expandSexps(e, x.rest()).cons(Symbol.builtin('new'))
 
-    case 'set':
-	      return expandSexps(e, x.rest()).cons(Symbol.builtin('set'))
+    case 'set!':
+	      return expandSexps(e, x.rest()).cons(Symbol.builtin('set!'))
 
     case '.':
 	      return expandSexps(e, x.rest()).cons(Symbol.builtin('.'))
@@ -1641,7 +1679,7 @@ function normalizeSexp(sexp) {
 	      case 'unwind-protect' :
 	          return normalizeUnwindProtect(sexp.slice(1))
 	          
-	      case 'set' :
+	      case 'set!' :
 	          return ['SET', normalizeSexp(sexp[1]), normalizeSexp(sexp[2])]
 
 	      case 'loop' : 
@@ -1685,8 +1723,8 @@ function compile(normalizedSexp, wantReturn) {
 
 function tracerFor(node) {    
     function tracer(val) {
-	tracer.traced = true
-	return ['SET', node, val]
+	      tracer.traced = true
+	      return ['SET', node, val]
     }
     tracer.traced = false
     return tracer
@@ -1704,15 +1742,15 @@ Scope.create = function() {
 
 Scope.prototype = {
     extend: function() {
-	return new Scope(this.level+1, 0, 0)
+	      return new Scope(this.level+1, 0, 0)
     },
 
     makeLocal: function() {
-	return ['LOCAL', this.level, this.locals++]
+	      return ['LOCAL', this.level, this.locals++]
     },
 
     makeLabel: function(tracer) {
-	return ['LABEL', this.level, this.labels++, false, tracer]
+	      return ['LABEL', this.level, this.labels++, false, tracer]
     }
 
 }
@@ -1731,15 +1769,15 @@ Context.compile = function(prog, wantRtn) {
     var ctx = Context.create()
 
     if (wantRtn) {
-	var rtn = ctx.scope.makeLocal()
-	ctx.compile(prog, tracerFor(rtn))
-	ctx.declareLocals()
-	ctx.push(['RETURN', rtn])
+	      var rtn = ctx.scope.makeLocal()
+	      ctx.compile(prog, tracerFor(rtn))
+	      ctx.declareLocals()
+	      ctx.push(['RETURN', rtn])
     } 
 
     else {
-	ctx.compile(prog, null)
-	ctx.declareLocals()
+	      ctx.compile(prog, null)
+	      ctx.declareLocals()
     }
 
     return ctx.block
@@ -1749,355 +1787,355 @@ Context.compile = function(prog, wantRtn) {
 Context.prototype = {
 
     extendEnv: function() {
-	return new Context(
-	    this.block, 
-	    this.env.extend(), 
-	    this.scope
-	)
+	      return new Context(
+	          this.block, 
+	          this.env.extend(), 
+	          this.scope
+	      )
     },
 
     extendScope: function() {
-	return new Context(
-	    [],
-	    this.env.extend(),
-	    this.scope.extend()
-	)
+	      return new Context(
+	          [],
+	          this.env.extend(),
+	          this.scope.extend()
+	      )
     },
 
     declareLocals: function() {
-	if (this.scope.locals > 0) {
-	    this.block.unshift(['DECLARE', this.scope.level, this.scope.locals]) 
-	}
+	      if (this.scope.locals > 0) {
+	          this.block.unshift(['DECLARE', this.scope.level, this.scope.locals]) 
+	      }
     },
 
     withBlock: function() {
-	return new Context([], this.env, this.scope)
+	      return new Context([], this.env, this.scope)
     },
 
     bindLabel: function(node, tracer) {
-	var label = this.scope.makeLabel(tracer)
-	this.env.put(node, label)
-	return label
+	      var label = this.scope.makeLabel(tracer)
+	      this.env.put(node, label)
+	      return label
     },
 
     bindLocal: function(node) {
-	var local = this.scope.makeLocal()
-	this.env.put(node, local)
-	return local
+	      var local = this.scope.makeLocal()
+	      this.env.put(node, local)
+	      return local
     },
 
     bindArgs: function(nodes) {
-	var args = []
-	for (var i=0; i<nodes.length; i++) {
-	    var arg = ['ARG', this.scope.level, i]
-	    this.env.put(nodes[i], arg)
-	    args.push(arg)
-	}
-	return args
+	      var args = []
+	      for (var i=0; i<nodes.length; i++) {
+	          var arg = ['ARG', this.scope.level, i]
+	          this.env.put(nodes[i], arg)
+	          args.push(arg)
+	      }
+	      return args
     },
 
     getLocal: function(node) {
-	return this.env.get(node)
+	      return this.env.get(node)
     },
 
     getLabel: function(node) {
-	return this.env.get(node)
+	      return this.env.get(node)
     },
 
     push: function(x) {
-	this.block.push(x)
+	      this.block.push(x)
     },
 
     pushExpr: function(x, t) {
-	this.block.push(t ? t(x) : x)
+	      this.block.push(t ? t(x) : x)
     },
 
     pushPure: function(x, t) {
-	if (t) { this.block.push(t(x)) }
+	      if (t) { this.block.push(t(x)) }
     },
 
     toAtom: function(node) {	
-	var tag = node[0]
-	switch(tag) {
+	      var tag = node[0]
+	      switch(tag) {
 
-	case 'CONST':
-	    return node
+	      case 'CONST':
+	          return node
 
-	case 'VAR':
-	    return this.getVar(node)
+	      case 'VAR':
+	          return this.getVar(node)
 
-	default:
-	    var atom = this.scope.makeLocal()
-	    this.compile(node, tracerFor(atom))
-	    return atom
-	}
+	      default:
+	          var atom = this.scope.makeLocal()
+	          this.compile(node, tracerFor(atom))
+	          return atom
+	      }
     },
 
     toExprs: function(nodes) {
-	var exprs = []
-	for (var i=0; i<nodes.length; i++) {
-	    exprs[i] = this.toExpr(nodes[i])
-	}
-	return exprs
+	      var exprs = []
+	      for (var i=0; i<nodes.length; i++) {
+	          exprs[i] = this.toExpr(nodes[i])
+	      }
+	      return exprs
     },
 
     toExpr: function(node) {
-	var tag = node[0]
-	switch(tag) {
+	      var tag = node[0]
+	      switch(tag) {
 
-	case 'RESTARGS':
-	case 'RAW':
-	case 'CONST':
-	case 'KEYWORD':
-	case 'GLOBAL':	    
-	    return node
+	      case 'RESTARGS':
+	      case 'RAW':
+	      case 'CONST':
+	      case 'KEYWORD':
+	      case 'GLOBAL':	    
+	          return node
 
-	case 'ARRAY':
-	    return ['ARRAY', this.toExprs(node[1])]
+	      case 'ARRAY':
+	          return ['ARRAY', this.toExprs(node[1])]
 
-	case 'PROPERTY':
-	    return ['PROPERTY', this.toExpr(node[1]), this.toExpr(node[2])]
+	      case 'PROPERTY':
+	          return ['PROPERTY', this.toExpr(node[1]), this.toExpr(node[2])]
 
-	case 'LOCAL':
-	    return this.getLocal(node)
+	      case 'LOCAL':
+	          return this.getLocal(node)
 
-	case 'SET':
-	    var loc = this.toExpr(node[1])
-	    this.compile(node[2], tracerFor(loc))
-	    return loc
+	      case 'SET':
+	          var loc = this.toExpr(node[1])
+	          this.compile(node[2], tracerFor(loc))
+	          return loc
 
-	case 'FUN':
-	    var cmp    = this.extendScope()
-	    var ret    = cmp.scope.makeLocal()
-	    var args   = cmp.bindArgs(node[1])
-	    cmp.compile(node[2], tracerFor(ret))
-	    cmp.declareLocals()
-	    cmp.push(['RETURN', ret])
-	    return ['FUN', args, cmp.block]
+	      case 'FUN':
+	          var cmp    = this.extendScope()
+	          var ret    = cmp.scope.makeLocal()
+	          var args   = cmp.bindArgs(node[1])
+	          cmp.compile(node[2], tracerFor(ret))
+	          cmp.declareLocals()
+	          cmp.push(['RETURN', ret])
+	          return ['FUN', args, cmp.block]
 
-	case 'CALL':
-	    var callee = this.toExpr(node[1])
-	    var args   = this.toExprs(node[2])
-	    return ['CALL', callee, args]
+	      case 'CALL':
+	          var callee = this.toExpr(node[1])
+	          var args   = this.toExprs(node[2])
+	          return ['CALL', callee, args]
 
-	case 'NEW':
-	    var callee = this.toExpr(node[1])
-	    var args   = this.toExprs(node[2])
-	    return ['NEW', callee, args]
+	      case 'NEW':
+	          var callee = this.toExpr(node[1])
+	          var args   = this.toExprs(node[2])
+	          return ['NEW', callee, args]
 
-	case 'THIS':
-	case 'RESTARGS':
-	case 'THROW':
-	case 'RETURN_FROM':
-	    this.compile(node, null)
-	    return ['CONST', null]
+	      case 'THIS':
+	      case 'RESTARGS':
+	      case 'THROW':
+	      case 'RETURN_FROM':
+	          this.compile(node, null)
+	          return ['CONST', null]
 
-	case 'BEGIN':
-	    var body = node[1]
-	    var len  = body.length
-	    for (var i=0; i<len; i++) {
-		if (i < len-1) {
-		    this.compile(body[i], null)
-		} else {
-		    return this.toExpr(body[i])
-		}
-	    }
+	      case 'BEGIN':
+	          var body = node[1]
+	          var len  = body.length
+	          for (var i=0; i<len; i++) {
+		            if (i < len-1) {
+		                this.compile(body[i], null)
+		            } else {
+		                return this.toExpr(body[i])
+		            }
+	          }
 
-	default:
-	    var local = this.scope.makeLocal()
-	    this.compile(node, tracerFor(local))
-	    return local
-	    
-	}
+	      default:
+	          var local = this.scope.makeLocal()
+	          this.compile(node, tracerFor(local))
+	          return local
+	          
+	      }
     },
 
     toBlock: function(node, tracer) {
-	var cmp = this.withBlock()
-	cmp.compile(node, tracer)
-	return cmp.block
+	      var cmp = this.withBlock()
+	      cmp.compile(node, tracer)
+	      return cmp.block
     },
 
     compileBody: function(body, tracer) {	
-	var len = body.length
-	for (var i=0; i<len; i++) {
-	    if (i < len-1) {
-		this.compile(body[i], null)
-	    } else {
-		this.compile(body[i], tracer)
-	    }
-	}
+	      var len = body.length
+	      for (var i=0; i<len; i++) {
+	          if (i < len-1) {
+		            this.compile(body[i], null)
+	          } else {
+		            this.compile(body[i], tracer)
+	          }
+	      }
     },
 
     compile: function(node, tracer) {
-	var tag = node[0]
+	      var tag = node[0]
 
-	switch(tag) {
+	      switch(tag) {
 
-	case 'RAW':
-	case 'CONST':
-	case 'GLOBAL':
-	    this.pushPure(node, tracer)
-	    break
+	      case 'RAW':
+	      case 'CONST':
+	      case 'GLOBAL':
+	          this.pushPure(node, tracer)
+	          break
 
-	case 'KEYWORD':
-	    this.pushPure(this.toExpr(node), tracer)
-	    break
+	      case 'KEYWORD':
+	          this.pushPure(this.toExpr(node), tracer)
+	          break
 
-	case 'LOCAL':
-	    this.pushPure(this.getLocal(node), tracer)
-	    break
+	      case 'LOCAL':
+	          this.pushPure(this.getLocal(node), tracer)
+	          break
 
-	case 'BEGIN':
-	    this.compileBody(node[1], tracer)
-	    break
+	      case 'BEGIN':
+	          this.compileBody(node[1], tracer)
+	          break
 
-	case 'IF':
-	    var test        = this.toAtom(node[1])
-	    var consequent  = this.toBlock(node[2], tracer)
-	    var alternative = this.toBlock(node[3], tracer)
-	    this.push(['IF', test, consequent, alternative])
-	    break
+	      case 'IF':
+	          var test        = this.toAtom(node[1])
+	          var consequent  = this.toBlock(node[2], tracer)
+	          var alternative = this.toBlock(node[3], tracer)
+	          this.push(['IF', test, consequent, alternative])
+	          break
 
-	case 'LOOP':
-	    var cmp   = this.extendEnv()
-	    var label = cmp.bindLabel(NULL_LABEL, tracer)
-	    var block = cmp.toBlock(node[1], tracer)
-	    this.push(['LOOP', label, block])	   
-	    break
+	      case 'LOOP':
+	          var cmp   = this.extendEnv()
+	          var label = cmp.bindLabel(NULL_LABEL, tracer)
+	          var block = cmp.toBlock(node[1], tracer)
+	          this.push(['LOOP', label, block])	   
+	          break
 
-	case 'BLOCK':
-	    var cmp   = this.extendEnv()
-	    var label = cmp.bindLabel(node[1], tracer)
-	    var block = cmp.toBlock(node[2], tracer)
-	    this.push(['BLOCK', label, block])
-	    break
-	    
-	case 'RETURN_FROM':
-	    // label structure:
-	    // [ TAG, LEVEL, ID, HAS_NON_LOCAL_EXITS?, TRACER, CONTEXT]
-	    var label  = this.getLabel(node[1])
-	    var tracer = label[4]
-	    this.compile(node[2], tracer)
-	    if (this.scope.level != label[1]) {	
-		if (!label[3]) { label[3] = true }
-		this.push(['NON_LOCAL_EXIT', label])
-	    } else {
-		this.push(['LOCAL_EXIT', label])
-	    }
-	    break
+	      case 'BLOCK':
+	          var cmp   = this.extendEnv()
+	          var label = cmp.bindLabel(node[1], tracer)
+	          var block = cmp.toBlock(node[2], tracer)
+	          this.push(['BLOCK', label, block])
+	          break
+	          
+	      case 'RETURN_FROM':
+	          // label structure:
+	          // [ TAG, LEVEL, ID, HAS_NON_LOCAL_EXITS?, TRACER, CONTEXT]
+	          var label  = this.getLabel(node[1])
+	          var tracer = label[4]
+	          this.compile(node[2], tracer)
+	          if (this.scope.level != label[1]) {	
+		            if (!label[3]) { label[3] = true }
+		            this.push(['NON_LOCAL_EXIT', label])
+	          } else {
+		            this.push(['LOCAL_EXIT', label])
+	          }
+	          break
 
-	case 'LETREC':
-	    var ctx      = this.extendEnv()
-	    var bindings = node[1]
-	    var body     = node[2]
-	    var locals = []
+	      case 'LETREC':
+	          var ctx      = this.extendEnv()
+	          var bindings = node[1]
+	          var body     = node[2]
+	          var locals = []
 
-	    for (var i=0; i<bindings.length; i++) {		
-		var pair  = bindings[i]
-		var sym   = pair[0]
-		var local = ctx.scope.makeLocal()
-		locals.push(local)
-		ctx.env.put(sym, local)
-	    }
+	          for (var i=0; i<bindings.length; i++) {		
+		            var pair  = bindings[i]
+		            var sym   = pair[0]
+		            var local = ctx.scope.makeLocal()
+		            locals.push(local)
+		            ctx.env.put(sym, local)
+	          }
 
-	    for (var i=0; i<bindings.length; i++) {		
-		var pair  = bindings[i]
-		var expr  = pair[1]
-		var local = locals[i]
-		ctx.compile(expr, tracerFor(local))
-	    }
+	          for (var i=0; i<bindings.length; i++) {		
+		            var pair  = bindings[i]
+		            var expr  = pair[1]
+		            var local = locals[i]
+		            ctx.compile(expr, tracerFor(local))
+	          }
 
-	    ctx.compile(body, tracer)
+	          ctx.compile(body, tracer)
 
-	    break
+	          break
 
-	case 'LET':
-	    var ctx      = this
-	    var bindings = node[1]
-	    var body     = node[2]
-	    for (var i=0; i<bindings.length; i++) {		
-		var pair  = bindings[i]
-		var sym   = pair[0]
-		var expr  = pair[1]
-		var local = ctx.scope.makeLocal()
-		ctx.compile(expr, tracerFor(local))
-		ctx = ctx.extendEnv()
-		ctx.env.put(sym, local)
-	    }
-	    ctx.compile(body, tracer)
-	    break
+	      case 'LET':
+	          var ctx      = this
+	          var bindings = node[1]
+	          var body     = node[2]
+	          for (var i=0; i<bindings.length; i++) {		
+		            var pair  = bindings[i]
+		            var sym   = pair[0]
+		            var expr  = pair[1]
+		            var local = ctx.scope.makeLocal()
+		            ctx.compile(expr, tracerFor(local))
+		            ctx = ctx.extendEnv()
+		            ctx.env.put(sym, local)
+	          }
+	          ctx.compile(body, tracer)
+	          break
 
-	case 'THROW':
-	    this.push(['THROW', this.toExpr(node[1])])
-	    break
+	      case 'THROW':
+	          this.push(['THROW', this.toExpr(node[1])])
+	          break
 
-	case 'PROPERTY':
-	case 'SET':
-	case 'FUN':
-	case 'ARRAY':
-	    this.pushPure(this.toExpr(node), tracer)
-	    break
+	      case 'PROPERTY':
+	      case 'SET':
+	      case 'FUN':
+	      case 'ARRAY':
+	          this.pushPure(this.toExpr(node), tracer)
+	          break
 
-	case 'NEW':
-	case 'CALL':
-	    this.pushExpr(this.toExpr(node), tracer)
-	    break
+	      case 'NEW':
+	      case 'CALL':
+	          this.pushExpr(this.toExpr(node), tracer)
+	          break
 
-	case 'RESTARGS':
-	    var local = this.bindLocal(node[1])
-	    this.push(['RESTARGS', local, node[2]])
-	    break
+	      case 'RESTARGS':
+	          var local = this.bindLocal(node[1])
+	          this.push(['RESTARGS', local, node[2]])
+	          break
 
-	case 'THIS':
-	    var local = this.bindLocal(node[1])
-	    this.push(['THIS', local])
-	    break	    
+	      case 'THIS':
+	          var local = this.bindLocal(node[1])
+	          this.push(['THIS', local])
+	          break	    
 
-	case 'UNWIND_PROTECT':
-	    var map      = node[1]
-	    var res      = {}
-	    var _try     = map['try']
-	    var _catch   = map['catch']
-	    var _finally = map['finally']
-	    
-	    if (_try) {
-		map['try'] = this.toBlock(_try, tracer)
-	    }
-	    
-	    if (_catch) {
-		var ctx  = this.extendEnv()
-		var sym  = _catch[0]
-		var expr = _catch[1]
-		var loc  = ctx.scope.makeLocal()
-		ctx.env.put(sym, loc)						
-		map['catch'] = ctx.toBlock(expr, tracer)		
-		map['catch'].unshift(['SET', loc, ['RAW', 'e']])
-	    }
+	      case 'UNWIND_PROTECT':
+	          var map      = node[1]
+	          var res      = {}
+	          var _try     = map['try']
+	          var _catch   = map['catch']
+	          var _finally = map['finally']
+	          
+	          if (_try) {
+		            map['try'] = this.toBlock(_try, tracer)
+	          }
+	          
+	          if (_catch) {
+		            var ctx  = this.extendEnv()
+		            var sym  = _catch[0]
+		            var expr = _catch[1]
+		            var loc  = ctx.scope.makeLocal()
+		            ctx.env.put(sym, loc)						
+		            map['catch'] = ctx.toBlock(expr, tracer)		
+		            map['catch'].unshift(['SET', loc, ['RAW', 'e']])
+	          }
 
-	    if (_finally) {
-		map['finally'] = this.toBlock(_finally, tracer)		
-	    }
-	    
-	    this.push(['UNWIND_PROTECT', map])
-	    break
-	    
-	default:
-	    throw Error('bad tag in compile: ' + node[0])
-	}
+	          if (_finally) {
+		            map['finally'] = this.toBlock(_finally, tracer)		
+	          }
+	          
+	          this.push(['UNWIND_PROTECT', map])
+	          break
+	          
+	      default:
+	          throw Error('bad tag in compile: ' + node[0])
+	      }
     },
 
     compileTopLevelFragment: function(normalizedSexp) {
-	this.compile(normalizedSexp)
-	this.declareLocals()
-	return this.block
+	      this.compile(normalizedSexp)
+	      this.declareLocals()
+	      return this.block
     },
 
     compileExpression: function(normalizedSexp) {
-	var ret = this.scope.makeLocal()
-	this.compile(normalizedSexp, tracerFor(ret))
-	this.declareLocals()
-	this.push(['RETURN', ret])	
-	return this.block
+	      var ret = this.scope.makeLocal()
+	      this.compile(normalizedSexp, tracerFor(ret))
+	      this.declareLocals()
+	      this.push(['RETURN', ret])	
+	      return this.block
     }
 
 }
@@ -2140,329 +2178,329 @@ Emitter.prototype = {
     namespaceSeparator: "::",
 
     emitProgram: function(program) {
-	this.emitStatements(program)
-	return this.getResult()
+	      this.emitStatements(program)
+	      return this.getResult()
     },
 
     getResult: function() {
-	return this.buffer.join("")
+	      return this.buffer.join("")
     },
 
     indent: function() {
-	this.indention += this.indentSize
+	      this.indention += this.indentSize
     },
 
     dedent: function() {
-	this.indention -= this.indentSize
+	      this.indention -= this.indentSize
     },
 
     write: function(x) {
-	this.buffer.push(x)
+	      this.buffer.push(x)
     },
 
     tab: function() {
-	var i=this.indention
-	while(i--) { this.write(" ") }
+	      var i=this.indention
+	      while(i--) { this.write(" ") }
     },
 
     // carriage return
     cr: function() {
-	this.write("\n")
-	this.tab()
+	      this.write("\n")
+	      this.tab()
     },
 
     emitNodes: function(nodes, sep) {
-	var started = false
-	for (var i=0; i<nodes.length; i++) {
-	    if (started) { this.write(sep) } else { started = true }
-	    this.emit(nodes[i])
-	}
+	      var started = false
+	      for (var i=0; i<nodes.length; i++) {
+	          if (started) { this.write(sep) } else { started = true }
+	          this.emit(nodes[i])
+	      }
     },
 
     emitArray: function(nodes) {
-	this.write("[")
-	this.emitNodes(nodes, ", ")
-	this.write("]")
+	      this.write("[")
+	      this.emitNodes(nodes, ", ")
+	      this.write("]")
     },
 
     emitList: function(nodes) {
-	this.write("(")
-	this.emitNodes(nodes, ", ")
-	this.write(")")
+	      this.write("(")
+	      this.emitNodes(nodes, ", ")
+	      this.write(")")
     },
 
     emitStatements: function(nodes) {
-	for (var i=0; i<nodes.length; i++) {
-	    this.cr()
-	    this.emit(nodes[i]);
-	    this.write(";")
-	}
+	      for (var i=0; i<nodes.length; i++) {
+	          this.cr()
+	          this.emit(nodes[i]);
+	          this.write(";")
+	      }
     },
 
     emitBlock: function(nodes) {
-	this.write("{")
-	this.indent()
-	this.emitStatements(nodes)
-	this.dedent()
-	this.cr()
-	this.write("}")
+	      this.write("{")
+	      this.indent()
+	      this.emitStatements(nodes)
+	      this.dedent()
+	      this.cr()
+	      this.write("}")
     },
 
     emitLabel: function(node) {
-	this.write("block_")
-	this.write(node[1])
-	this.write("_")
-	this.write(node[2])
+	      this.write("block_")
+	      this.write(node[1])
+	      this.write("_")
+	      this.write(node[2])
     },
 
     emitFlag: function(node) {
-	this.write("flag_")
-	this.write(node[1])
-	this.write("_")
-	this.write(node[2])
+	      this.write("flag_")
+	      this.write(node[1])
+	      this.write("_")
+	      this.write(node[2])
     },
 
     emitLabeledBlock: function(prefix, label, block) {
-	var hasNonLocalExits = label[3]	
+	      var hasNonLocalExits = label[3]	
 
-	if (hasNonLocalExits) {	    
-	    this.write('var ')
-	    this.emitFlag(label)
-	    this.write(' = true;')
-	    this.cr()
-	    this.write('try {')
-	    this.indent()
-	    this.cr()
-	}
+	      if (hasNonLocalExits) {	    
+	          this.write('var ')
+	          this.emitFlag(label)
+	          this.write(' = true;')
+	          this.cr()
+	          this.write('try {')
+	          this.indent()
+	          this.cr()
+	      }
 
-	this.emitLabel(label)
-	this.write(":")
-	this.write(prefix)
-	this.write(" ")
-	this.emitBlock(block)
-	
-	if (hasNonLocalExits) {
-	    this.dedent()
-	    this.cr()
+	      this.emitLabel(label)
+	      this.write(":")
+	      this.write(prefix)
+	      this.write(" ")
+	      this.emitBlock(block)
+	      
+	      if (hasNonLocalExits) {
+	          this.dedent()
+	          this.cr()
 
-	    this.write("} catch (e) {")
-	    this.indent()
-	    this.cr()
+	          this.write("} catch (e) {")
+	          this.indent()
+	          this.cr()
 
-	    this.write('if (')
-	    this.emitFlag(label)
-	    this.write(') {')
-	    this.indent()
-	    this.cr()
+	          this.write('if (')
+	          this.emitFlag(label)
+	          this.write(') {')
+	          this.indent()
+	          this.cr()
 
-	    // flag not thrown
-	    this.write('throw e;')
-	    this.dedent()
-	    this.cr()
-	    this.write('}')
-	    this.dedent()
-	    this.cr()
-	    this.write('} finally {')
-	    this.indent()
-	    this.cr()
-	    
-	    this.emitFlag(label)
-	    this.write(' = false')
-	    this.dedent()
-	    this.cr()
-	    this.write('}')	    
-	}
+	          // flag not thrown
+	          this.write('throw e;')
+	          this.dedent()
+	          this.cr()
+	          this.write('}')
+	          this.dedent()
+	          this.cr()
+	          this.write('} finally {')
+	          this.indent()
+	          this.cr()
+	          
+	          this.emitFlag(label)
+	          this.write(' = false')
+	          this.dedent()
+	          this.cr()
+	          this.write('}')	    
+	      }
 
     },
 
     emit: function(node) {
-	var tag = node[0]
-	var a   = node[1]
-	var b   = node[2]
-	var c   = node[3]
+	      var tag = node[0]
+	      var a   = node[1]
+	      var b   = node[2]
+	      var c   = node[3]
 
-	switch(tag) {
+	      switch(tag) {
 
-	case 'KEYWORD':
-	    this.write('RT["poet::keyword"](' + JSON.stringify(a) + ')')
-	    break
+	      case 'KEYWORD':
+	          this.write('RT["poet::keyword"](' + JSON.stringify(a) + ')')
+	          break
 
-	case 'IF':	    
-	    this.write('if (')
-	    this.emit(a)
-	    this.write(' != null && ')
-	    this.emit(a)
-	    this.write(' !== false) ')
-	    this.emitBlock(b)
+	      case 'IF':	    
+	          this.write('if (')
+	          this.emit(a)
+	          this.write(' != null && ')
+	          this.emit(a)
+	          this.write(' !== false) ')
+	          this.emitBlock(b)
 
-	    if (c[0]) {
-		this.write(' else ')
-		if (c[0][0] == 'IF') {
-		    this.emit(c[0])
-		} 
-		else {
-		    this.emitBlock(c)
-		}
-	    }
-	    break
+	          if (c[0]) {
+		            this.write(' else ')
+		            if (c[0][0] == 'IF') {
+		                this.emit(c[0])
+		            } 
+		            else {
+		                this.emitBlock(c)
+		            }
+	          }
+	          break
 
-	case 'ARRAY':
-	    this.emitArray(a)
-	    break
+	      case 'ARRAY':
+	          this.emitArray(a)
+	          break
 
-	case 'DECLARE':
-	    this.write('var ')
-	    var flag = false
-	    for (var i=0; i<b; i++) {
-		if (flag) { this.write(', ') } else { flag = true }
-		this.write('local_' + a + '_' + i)
-	    }
-	    break
+	      case 'DECLARE':
+	          this.write('var ')
+	          var flag = false
+	          for (var i=0; i<b; i++) {
+		            if (flag) { this.write(', ') } else { flag = true }
+		            this.write('local_' + a + '_' + i)
+	          }
+	          break
 
-	case 'PROPERTY':
-	    this.emit(a)
-	    this.write('[')
+	      case 'PROPERTY':
+	          this.emit(a)
+	          this.write('[')
 
-	    if (b[0] == 'KEYWORD') {
-		this.write(JSON.stringify(b[1]))
-	    } else {
-		this.emit(b)
-	    }
+	          if (b[0] == 'KEYWORD') {
+		            this.write(JSON.stringify(b[1]))
+	          } else {
+		            this.emit(b)
+	          }
 
-	    this.write(']')
-	    break
+	          this.write(']')
+	          break
 
-	case 'RAW':
-	    this.write(a)
-	    break
+	      case 'RAW':
+	          this.write(a)
+	          break
 
-	case 'CONST':
-	    if (typeof a == 'string') {
-		this.write(JSON.stringify(a))
-	    }
+	      case 'CONST':
+	          if (typeof a == 'string') {
+		            this.write(JSON.stringify(a))
+	          }
 
-	    else {
-		this.write('' + a)
-	    }
+	          else {
+		            this.write('' + a)
+	          }
 
-	    break;
+	          break;
 
-	case 'GLOBAL': 
-	    this.write(this.globalSymbol)
-	    this.write("[\"")
-	    this.write(a)
-	    this.write(this.namespaceSeparator)
-	    this.write(b)
-	    this.write("\"]")
-	    break
+	      case 'GLOBAL': 
+	          this.write(this.globalSymbol)
+	          this.write("[\"")
+	          this.write(a)
+	          this.write(this.namespaceSeparator)
+	          this.write(b)
+	          this.write("\"]")
+	          break
 
-	case 'ARG':
-	    this.write("arg_" + a + "_" + b)
-	    break
+	      case 'ARG':
+	          this.write("arg_" + a + "_" + b)
+	          break
 
-	case 'LOCAL':
-	    this.write("local_" + a + "_" + b)
-	    break
+	      case 'LOCAL':
+	          this.write("local_" + a + "_" + b)
+	          break
 
-	case 'SET':
-	    this.emit(a)
-	    this.write(" = ")
-	    this.emit(b)
-	    break
+	      case 'SET':
+	          this.emit(a)
+	          this.write(" = ")
+	          this.emit(b)
+	          break
 
-	case 'FUN':
-	    this.write("function")
-	    this.emitList(a)
-	    this.write(" ")
-	    this.emitBlock(b)
-	    break
+	      case 'FUN':
+	          this.write("function")
+	          this.emitList(a)
+	          this.write(" ")
+	          this.emitBlock(b)
+	          break
 
-	case 'CALL':
-	    this.emit(a)
-	    this.emitList(b)
-	    break
+	      case 'CALL':
+	          this.emit(a)
+	          this.emitList(b)
+	          break
 
-	case 'NEW':
-      this.write('new ')
-	    this.emit(a)
-	    this.emitList(b)
-	    break
+	      case 'NEW':
+            this.write('new ')
+	          this.emit(a)
+	          this.emitList(b)
+	          break
 
-	case 'THROW':
-	    this.write('throw ')
-	    this.emit(a)
-	    break
+	      case 'THROW':
+	          this.write('throw ')
+	          this.emit(a)
+	          break
 
-	case 'RETURN':
-	    this.write('return ')
-	    this.emit(a)
-	    break	    
+	      case 'RETURN':
+	          this.write('return ')
+	          this.emit(a)
+	          break	    
 
-	case 'LOOP':
-	    this.emitLabeledBlock('for(;;)', a, b)
-	    break
+	      case 'LOOP':
+	          this.emitLabeledBlock('for(;;)', a, b)
+	          break
 
-	case 'BLOCK':
-	    this.emitLabeledBlock('', a, b)
-	    break
+	      case 'BLOCK':
+	          this.emitLabeledBlock('', a, b)
+	          break
 
-	case 'LOCAL_EXIT':
-	    this.write('break ')
-	    this.emitLabel(a)
-	    break
+	      case 'LOCAL_EXIT':
+	          this.write('break ')
+	          this.emitLabel(a)
+	          break
 
-	case 'NON_LOCAL_EXIT':
-	    this.emitFlag(a)
-	    this.write(' = false; ')
-	    this.write('throw "NON_LOCAL_EXIT"')
-	    break
+	      case 'NON_LOCAL_EXIT':
+	          this.emitFlag(a)
+	          this.write(' = false; ')
+	          this.write('throw "NON_LOCAL_EXIT"')
+	          break
 
-	case 'RESTARGS':
-	    this.write('var len = arguments.length;')
-	    this.cr()
-	    
-	    this.emit(a); this.write(' = new Array(len-'+b+');')	    
-	    this.cr()
+	      case 'RESTARGS':
+	          this.write('var len = arguments.length;')
+	          this.cr()
+	          
+	          this.emit(a); this.write(' = new Array(len-'+b+');')	    
+	          this.cr()
 
-	    this.write('for(var i=0, ii=len-'+b+'; i<ii; i++) {')
+	          this.write('for(var i=0, ii=len-'+b+'; i<ii; i++) {')
 
-	    this.indent()
-	    this.cr()
+	          this.indent()
+	          this.cr()
 
-	    this.emit(a)
-	    this.write('[i] = arguments[i+'+b+'];')
-	    
-	    this.dedent()
-	    this.cr()
+	          this.emit(a)
+	          this.write('[i] = arguments[i+'+b+'];')
+	          
+	          this.dedent()
+	          this.cr()
 
-	    this.write("}")
-	    break
+	          this.write("}")
+	          break
 
-	case 'THIS':
-	    this.emit(a)
-	    this.write(' = this;')
-	    break
+	      case 'THIS':
+	          this.emit(a)
+	          this.write(' = this')
+	          break
 
-	case 'UNWIND_PROTECT':
-	    this.write('try ')
-	    this.emitBlock(a['try'] || [])
+	      case 'UNWIND_PROTECT':
+	          this.write('try ')
+	          this.emitBlock(a['try'] || [])
 
-	    if (a['catch']) {
-		this.write(' catch(e) ')
-		this.emitBlock(a['catch'])
-	    }
+	          if (a['catch']) {
+		            this.write(' catch(e) ')
+		            this.emitBlock(a['catch'])
+	          }
 
-	    if (a['finally']) {
-		this.write(' finally ')
-		this.emitBlock(a['finally'])
-	    }
+	          if (a['finally']) {
+		            this.write(' finally ')
+		            this.emitBlock(a['finally'])
+	          }
 
-	    break
+	          break
 
-	default:
-	    throw Error('unhandled tag in emitter: ' + tag)
+	      default:
+	          throw Error('unhandled tag in emitter: ' + tag)
 
-	}
+	      }
 
     }
 
@@ -2476,6 +2514,7 @@ Emitter.prototype = {
 // still not sure if we want to implement these in javascript or not
 // but they make writing printers much easier
 
+var INDEX_KEY   = 'poet::generic-index'
 var GENERIC_KEY = 'poet::generic-key'
 var DEFAULT_KEY = 'poet::generic-default'
 var CUSTOM_NAME = 'poet::name'
@@ -2492,7 +2531,8 @@ function Generic(options) {
 	      var method     = receiver[key] || generic[DEFAULT_KEY]
 	      return method.apply(this, arguments)
     }
-    
+
+    generic[INDEX_KEY]   = index
     generic[GENERIC_KEY] = key
     generic[CUSTOM_NAME] = name    
     generic[DEFAULT_KEY] = function() {
@@ -2657,10 +2697,11 @@ function println() {
 
 // list functions
 
-var cons    = Generic({name: "cons", index: 1})
-var first   = Generic({name: "first"})
-var rest    = Generic({name: "rest"})
-var isEmpty = Generic({name: "empty?"})
+var cons     = Generic({name: "cons", index: 1})
+var first    = Generic({name: "first"})
+var rest     = Generic({name: "rest"})
+var isEmpty  = Generic({name: "empty?"})
+var iterator = Generic({name: "iterator"})
 
 Generic.addMethods(
     cons,
@@ -2691,9 +2732,8 @@ Generic.addMethods(
     null, function(_) { return true },
     List.Nil, function(_) { return true },
     List.Cons, function(x) { return false },    
-    Array, function(x) { return x.length == 0 }
+    Array, function(x) { return x.length == 0 }    
 )
-
 
 // END poet.generic.js
 
@@ -2748,17 +2788,30 @@ ListIterator.prototype.next = function() {
     }
 }
 
-var toIterator = Generic({name: '->iterator'})
+var makeIterator = Generic({name: 'make-iterator'})
 
 Generic.addMethods(
-    toIterator,
-    null,  function(_) { return new NullIterator() },
-    Array, function(array) { return new ArrayIterator(array) },
-    List,  function(list) { return new ListIterator(list) }    
+    makeIterator,
+    'default', function(x) {
+        if (x instanceof Object && 'length' in x) {
+            return new ArrayIterator(x)
+        }
+    },
+    null,   function(_)      { return new NullIterator() },
+    List,   function(list)   { return new ListIterator(list) },
+    String, function(string) { return new ArrayIterator(string) },
+    Array,  function(array)  { return new ArrayIterator(array) }
 )
 
+if (typeof NodeList != 'undefined') {
+    Generic.addMethods(
+        makeIterator,
+        NodeList, function(array) { return new ArrayIterator(array) }
+    )
+}
+
 function forEach(func, coll) {
-    var iter = toIterator(coll)
+    var iter = makeIterator(coll)
     while (iter.hasNext()) {
         func(iter.next())
     }
@@ -2769,7 +2822,7 @@ function forEach_(func) {
     var args  = []
 
     for (var i=1; i<arguments.length; i++) {
-        iters.push(toIterator(arguments[i]))
+        iters.push(makeIterator(arguments[i]))
     }
 
     for (;;) {
@@ -2782,6 +2835,45 @@ function forEach_(func) {
     }
 }
 
+function _reduce(f, x, iter) {
+    while (iter.hasNext()) { x = f(x, iter.next()) }
+    return x
+}
+
+function reduce(f, a, b) {
+    switch(arguments.length) {
+    case 2: 
+        var iter = makeIterator(a)
+        return _reduce(f, iter.next(), iter)
+    case 3:
+        return _reduce(f, a, makeIterator(b))
+    default:
+        throw Error('reduce requires exactly 2 or 3 arguments')
+    }
+}
+
+function range(start, end, step) {
+    var res = []
+
+    if (arguments.length == 1) {
+        end   = start;
+        start = 0;
+        step  = 1;
+    }
+
+    if (start < end) {
+        step = step || 1
+        for (var i=start; i<=end; i+=step) { res.push(i) }
+    }
+
+    else if (end < start) {
+        step = step || -1
+        for (var i=start; i>=end; i+=step) { res.push(i) }
+    }
+
+    return res
+
+}
 
 
 // END poet.iterable.js
@@ -2827,14 +2919,17 @@ function publish(key, data) {
 
 var RT = {
 
+    'poet::*echo-js*'  : false,
+    'poet::*echo-sexp' : false,
+
     'poet::*load-path*' : ["."],
     'poet::*env*'       : null,
     'poet::*out*'       : null /* defined at end of file */,
     'poet::window'      : null /* defined at end of file */,	
     
     'poet::macroexpand-1' : null,
-    'poet::macroexpand' : null,
-    'poet::expand' : null,
+    'poet::macroexpand'   : null,
+    'poet::expand'        : null,
 
     'poet::List'    : List,
     'poet::Symbol'  : Symbol,
@@ -2849,7 +2944,9 @@ var RT = {
 
     'poet::for-each'  : forEach,
     'poet::for-each*' : forEach_,
- 
+    'poet::reduce'    : reduce,
+    'poet::range'     : range,
+
     'poet::symbol' : function(namespace, name) {
 	      switch(arguments.length) {
 	      case 1: 
@@ -3004,12 +3101,22 @@ var RT = {
 	      }
     },
 
+    'poet::zero?' : function(x) { return x === 0 },
+    'poet::even?' : function(x) { return !(x & 1) },
+    'poet::odd?'  : function(x) { return !!(x & 1) },
+    'poet::inc'   : function(x) { return (x + 1) },
+    'poet::dec'   : function(x) { return (x - 1) },
+
     'poet::mod' : function(x, y) {
 	      return x % y
     },
 
     'poet::div' : function(x, y) {
 	      return Math.floor(x/y)
+    },
+
+    'poet::instance?' : function(obj, type) {
+        return obj instanceof type
     },
 
     'poet::array?' : Array.isArray,
@@ -3094,7 +3201,22 @@ var RT = {
     'poet::Array'    : Array,
     'poet::Date'     : Date,
     'poet::RegExp'   : RegExp,
-    'poet::NaN'      : NaN   
+    'poet::NaN'      : NaN,
+    'poet::Error'    : Error,
+    'poet::Math'     : Math,
+
+    'poet::parseInt'   : parseInt,
+    'poet::parseFloat' : parseFloat,
+    'poet::infinity'   : Infinity,
+    'poet::-infinity'  : -Infinity,
+
+    'poet::object' : function() {
+        var obj = {}
+        for (var i=0, ii = arguments.length; i<ii; i+=2) {
+            obj[arguments[i]] = arguments[i+1]
+        }
+        return obj
+    }
 
 }
 
@@ -3142,6 +3264,10 @@ if (typeof window != 'undefined') {
     RT['poet::window'] = window
 } 
 
+if (typeof console != 'undefined') {
+    RT['poet::console'] = console
+}
+
 if (typeof __dirname != 'undefined') {
     var path = require('path')
     RT['poet::*load-path*'].push(path.dirname(process.argv[1]))
@@ -3181,9 +3307,9 @@ RT['poet::macroexpand'] = function(sexp) {
 var specialForms = [
     'define*', 'define-macro*', 
     'quote', 'quasiquote', 'unquote', 'unquote-splicing',
-    'fn*', 'let*', 'letrec*', 'begin', 'if', 'set',
+    'fn*', 'let*', 'letrec*', 'begin', 'if', 'set!',
     'block', 'loop', 'return-from', 'unwind-protect', 'throw', 'js*',
-    'require', 'new'
+    'require', 'new', "."
 ]
 
 specialForms.forEach(function(name) {
@@ -3280,7 +3406,7 @@ function expandTopLevel(config) {
 		                var sym  = sexp.rest().first()
 		                var loc  = bindGlobal(env, sym)		
 		                var expr = sexp.rest().rest().first()
-		                sexp = List.create(Symbol.builtin('set'), loc, expr)
+		                sexp = List.create(Symbol.builtin('set!'), loc, expr)
 		            }	    
 		            
 		            var esexp   = expand(env, sexp)		
@@ -3386,6 +3512,8 @@ function p(x) {
 
 var poet_preamble = ""
 
+var ECHO = false
+
 function compileModule(module, main) {
     var buf = [poet_preamble]    
     function append(data) { 
@@ -3393,12 +3521,21 @@ function compileModule(module, main) {
 	      // when emitting a compiled file 
 	      // we have to wrap any top level expressions
 	      // that create local variables
-        console.log(js)
+
+        if (RT['poet::*echo-js*']) { 
+            console.log(js) 
+        }
+
 	      if (/^\s*var.*/.test(js)) { js = "!(function() {\n" + js + "\n})();" }		    
 	      buf.push(js) 
     }
     subscribe('poet:emit-toplevel-expression', append)
-    subscribe('poet:macroexpand-toplevel-sexp', function(x) { prn(x.sexp) })
+
+    subscribe(
+        'poet:macroexpand-toplevel-sexp', 
+        function(x) { if(RT['poet::*echo-sexp*']) { prn(x.sexp) } }
+    ) 
+
     Env.load(module)
     unsubscribe('poet:emit-toplevel-expression', append)
     if (main) {	ebuf.push('\nRT[' + JSON.stringify(main) + ']()') }

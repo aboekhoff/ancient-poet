@@ -29,11 +29,11 @@ Reader.create = function(options) {
     return reader;
 }
 
-Reader.hexRegex    = /0(x|X)[0-9a-fA-F]+/;
-Reader.octRegex    = /0[0-7]+/;
-Reader.intRegex    = /[0-9]+/;
-Reader.floatRegex  = /[0-9]+\.[0-9]+/;
-Reader.binaryRegex = /0(b|B)[01]+/;
+Reader.hexRegex    = /^0(x|X)[0-9a-fA-F]+/;
+Reader.octRegex    = /^0[0-7]+/;
+Reader.intRegex    = /^(0)|[1-9][0-9]*/;
+Reader.floatRegex  = /^((0)|[1-9][0-9]*)\.[0-9]+/;
+Reader.binaryRegex = /^0(b|B)[01]+/;
 
 Reader.escapeMap = {
     'n'  : '\n',
@@ -57,6 +57,8 @@ Reader.notTerminal = function(c) {
     case ')':
     case '[':
     case ']':
+    case '{':
+    case '}':
     case '"':
     case "'":
     case '`':
@@ -192,6 +194,7 @@ Reader.prototype = {
 	      case ']': this.syntaxError('unmatched closing brace');
 	      case '(': return this.readList();
 	      case '[': return this.readArray();
+        case '{': return this.readObject();
 	      case '"': return this.readString();
 	      case "'": return this.readQuote();
 	      case ',': return this.readUnquote();
@@ -231,6 +234,32 @@ Reader.prototype = {
 	      return this.makeList(
 	          [Symbol.builtin(name), this.readSexp()]
 	      )
+
+    },
+
+    readObject: function() {
+	      var position = this.getPosition();		
+	      var list     = [];
+	      this.pop();
+
+	      loop:for(;;) {			
+	          this.readWhitespace();
+	          var c = this.peek();
+	          switch(c) {
+
+	          case null: 
+		            this.error('unclosed object-literal', position);
+		            
+	          case '}': 
+		            this.pop(); 
+		            break loop;
+
+	          default: 
+		            list.push(this.readSexp()); continue loop;
+	          }
+	      }
+
+        return List.fromArray(list).cons(Symbol.builtin('object'))
 
     },
 
@@ -289,9 +318,9 @@ Reader.prototype = {
 	          case '"' : return string.join("");
 	          case '\\':
 		            var position2 = this.getPosition();
-		            var cc = this.escapeMap[this.pop()];
+		            var cc = Reader.escapeMap[this.pop()];
 		            if (!cc) { this.error('invalid escape character', position2); }
-		            this.string.push(cc);
+		            string.push(cc);
 		            continue;
 	          default:
 		            string.push(c);
@@ -308,11 +337,21 @@ Reader.prototype = {
 	      }
 
 	      switch (true) {
-	      case Reader.floatRegex.test(string)  : return sign * parseFloat(string);
-	      case Reader.hexRegex.test(string)    : return sign * parseInt(string, 16);
-	      case Reader.octRegex.test(string)    : return sign * parseInt(string, 8);
-	      case Reader.binaryRegex.test(string) : return sign * parseInt(string, 2);
-	      case Reader.intRegex.test(string)    : return sign * parseInt(string, 10);
+	      case Reader.octRegex.test(string) : 
+            return sign * parseInt(string.substring(1), 8);
+
+	      case Reader.floatRegex.test(string) : 
+            return sign * parseFloat(string);
+
+	      case Reader.intRegex.test(string) : 
+            return sign * parseInt(string, 10);
+
+	      case Reader.hexRegex.test(string) : 
+            return sign * parseInt(string.substring(2), 16);
+
+	      case Reader.binaryRegex.test(string) : 
+            return sign * parseInt(string.substring(2), 2);
+
 	      default:
 	          throw Error('invalid number literal at ' + position);
 	      }
