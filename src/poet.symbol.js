@@ -105,7 +105,6 @@ Symbol.Tagged.prototype.applyTag = function(tag) {
 	new Symbol.Tagged(tag, this)
 }
 
-
 Symbol.Qualified.prototype.applyTag = function(tag) {
     return this
 }
@@ -125,6 +124,19 @@ Symbol.Tagged.prototype.ensureTag = function(tag) {
 
 Symbol.Qualified.prototype.ensureTag = function(tag) {
     return this
+}
+
+// getName (useful for macros)
+Symbol.Simple.prototype.getName = function() {
+    return this.name
+}
+
+Symbol.Qualified.prototype.getName = function() {
+    return this.name
+}
+
+Symbol.Tagged.prototype.getName = function() {
+    return this.symbol.getName()
 }
 
 function gensym(suffix) {

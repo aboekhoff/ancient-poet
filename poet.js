@@ -187,7 +187,6 @@ Symbol.Tagged.prototype.applyTag = function(tag) {
 	new Symbol.Tagged(tag, this)
 }
 
-
 Symbol.Qualified.prototype.applyTag = function(tag) {
     return this
 }
@@ -207,6 +206,19 @@ Symbol.Tagged.prototype.ensureTag = function(tag) {
 
 Symbol.Qualified.prototype.ensureTag = function(tag) {
     return this
+}
+
+// getName (useful for macros)
+Symbol.Simple.prototype.getName = function() {
+    return this.name
+}
+
+Symbol.Qualified.prototype.getName = function() {
+    return this.name
+}
+
+Symbol.Tagged.prototype.getName = function() {
+    return this.symbol.getName()
 }
 
 function gensym(suffix) {
@@ -1039,7 +1051,7 @@ function expandList(e, x) {
 
 function isFrontDotted(x) {
     return (x instanceof Symbol) &&
-	      (/\.[^\.]+/.test(x.toString())) 	
+	      (/^\.[^\.]/.test(x.getName())) 	
 }
 
 function expandCall(e, x) {
@@ -1051,7 +1063,7 @@ function expandCall(e, x) {
 }
 
 function expandFrontDottedList(e, x) {
-    var method   = x.first().reify().name.substring(1)
+    var method   = x.first().getName().substring(1)
     var receiver = expandSexp(e, x.rest().first())
     var args     = expandSexps(e, x.rest().rest())
 
